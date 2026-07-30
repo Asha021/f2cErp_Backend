@@ -1,0 +1,6 @@
+node_modules/
+.env
+uploads/
+generated_pos/
+generated_charts/
+generated_shipping/
