@@ -1,80 +1,59 @@
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle } = require('docx');
 const ExcelJS = require('exceljs');
+const { execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } = require('docx');
 
 /**
- * Generate a standard Purchase Order DOCX document.
+ * Generate a standard Purchase Order DOCX document using the PHP template.
  */
-async function generatePODocx(poData, poItems, companyData) {
-  // Create table rows for items
-  const tableRows = [
-    new TableRow({
-      children: [
-        new TableCell({ children: [new Paragraph({ text: "Item #", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Description", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Quantity", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Price", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Total", style: "bold" })] }),
-      ],
-    }),
-  ];
-
-  let grandTotal = 0;
-  poItems.forEach(item => {
-    const total = (item.quantity * item.price);
-    grandTotal += total;
-    tableRows.push(
-      new TableRow({
-        children: [
-          new TableCell({ children: [new Paragraph(item.item_no || '')] }),
-          new TableCell({ children: [new Paragraph(item.description || '')] }),
-          new TableCell({ children: [new Paragraph(String(item.quantity || 0))] }),
-          new TableCell({ children: [new Paragraph(`$${(item.price || 0).toFixed(2)}`)] }),
-          new TableCell({ children: [new Paragraph(`$${total.toFixed(2)}`)] }),
-        ],
-      })
-    );
+function generatePODocx(poData, poItems, companyData) {
+  return new Promise((resolve, reject) => {
+    const phpPath = 'C:\\\\xampp\\\\php\\\\php.exe';
+    const wrapperPath = path.join(__dirname, 'generate_po_wrapper.php');
+    
+    const payload = JSON.stringify({ po: poData, items: poItems });
+    
+    const child = execFile(phpPath, [wrapperPath], (error, stdout, stderr) => {
+      if (error) {
+        console.error('PHP Wrapper Error:', error);
+        console.error('PHP Wrapper Stderr:', stderr);
+        return reject(error);
+      }
+      
+      const output = stdout.trim();
+      if (output.startsWith('ERROR:')) {
+        return reject(new Error(output));
+      }
+      
+      // The output should be the temporary file path
+      const tempPath = output;
+      
+      if (!fs.existsSync(tempPath)) {
+        return reject(new Error('PHP generated file not found at: ' + tempPath));
+      }
+      
+      // Read the file and return buffer
+      const buffer = fs.readFileSync(tempPath);
+      
+      // Clean up the temporary file
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (cleanupErr) {
+        console.error('Failed to clean up temp file:', cleanupErr);
+      }
+      
+      resolve(buffer);
+    });
+    
+    // Write JSON payload to stdin of the PHP process
+    if (child.stdin) {
+      child.stdin.write(payload);
+      child.stdin.end();
+    } else {
+      reject(new Error('Failed to open stdin for PHP process'));
+    }
   });
-
-  const doc = new Document({
-    sections: [
-      {
-        properties: {},
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({ text: companyData.company_name || 'COMPANY NAME', bold: true, size: 36 }),
-            ],
-            spacing: { after: 200 },
-          }),
-          new Paragraph({ text: "PURCHASE ORDER", heading: "Heading1", alignment: "center", spacing: { after: 400 } }),
-          new Paragraph(`PO Number: ${poData.po_number || 'N/A'}`),
-          new Paragraph(`PO Date: ${poData.po_date ? new Date(poData.po_date).toLocaleDateString() : 'N/A'}`),
-          new Paragraph(`Delivery Date: ${poData.po_delivery_date ? new Date(poData.po_delivery_date).toLocaleDateString() : 'N/A'}`),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({ text: "Supplier:", bold: true }),
-          new Paragraph(`${poData.factory || 'N/A'}`),
-          new Paragraph(`${poData.factory_address || ''}`),
-          new Paragraph({ text: "", spacing: { after: 400 } }),
-          new Table({
-            rows: tableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-          }),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: `Grand Total: $${grandTotal.toFixed(2)}`, bold: true, size: 28 }),
-            ],
-            alignment: "right",
-          }),
-          new Paragraph({ text: "", spacing: { after: 400 } }),
-          new Paragraph({ text: "Special Comments / Instructions:", bold: true }),
-          new Paragraph(poData.special_comments || 'None'),
-        ],
-      },
-    ],
-  });
-
-  return await Packer.toBuffer(doc);
 }
 
 /**
@@ -84,40 +63,131 @@ async function generatePOXlsx(poData, poItems, companyData) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Purchase Order');
 
-  sheet.columns = [
-    { header: 'Item Number', key: 'item_no', width: 15 },
-    { header: 'Description', key: 'description', width: 40 },
-    { header: 'Quantity', key: 'quantity', width: 10 },
-    { header: 'Price', key: 'price', width: 15 },
-    { header: 'Total', key: 'total', width: 15 },
+  // Set column widths matching PHP
+  sheet.getColumn('A').width = 20;
+  sheet.getColumn('B').width = 30;
+  sheet.getColumn('C').width = 15;
+  sheet.getColumn('D').width = 40;
+  sheet.getColumn('E').width = 15;
+  sheet.getColumn('F').width = 15;
+  sheet.getColumn('G').width = 15;
+  sheet.getColumn('H').width = 20;
+
+  let currentRow = 1;
+
+  // Title
+  sheet.getCell(`A${currentRow}`).value = 'PURCHASE ORDER';
+  sheet.mergeCells(`A${currentRow}:H${currentRow}`);
+  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 16 };
+  sheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+  currentRow += 2;
+
+  // PO Details Section
+  sheet.getCell(`A${currentRow}`).value = 'PO Details';
+  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+  sheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+  sheet.mergeCells(`A${currentRow}:H${currentRow}`);
+  currentRow++;
+
+  // PO Information
+  const poDetails = [
+    { label: 'PO Number', value: poData.po_number || '' },
+    { label: 'PO Date', value: poData.po_date ? new Date(poData.po_date).toLocaleDateString('en-GB') : '' },
+    { label: 'Buyer', value: poData.buyer || '' },
+    { label: 'Buyer Address', value: poData.buyer_address || '' },
+    { label: 'Factory', value: poData.factory || '' },
+    { label: 'Factory Email', value: poData.factory_email || '' },
+    { label: 'Factory Address', value: poData.factory_address || '' },
+    { label: 'Delivery Date', value: poData.po_delivery_date ? new Date(poData.po_delivery_date).toLocaleDateString('en-GB') : '' },
+    { label: 'Special Comments', value: poData.special_comments || '' }
   ];
 
-  sheet.insertRow(1, [companyData.company_name || 'COMPANY NAME']);
-  sheet.insertRow(2, ['PURCHASE ORDER']);
-  sheet.insertRow(3, [`PO Number: ${poData.po_number}`]);
-  sheet.insertRow(4, [`Supplier: ${poData.factory}`]);
-  sheet.insertRow(5, []); // blank
-  
-  sheet.getRow(6).values = ['Item Number', 'Description', 'Quantity', 'Price', 'Total'];
-  sheet.getRow(6).font = { bold: true };
-
-  let startRow = 7;
-  let grandTotal = 0;
-  poItems.forEach(item => {
-    const total = item.quantity * item.price;
-    grandTotal += total;
-    sheet.getRow(startRow).values = [
-      item.item_no || '',
-      item.description || '',
-      item.quantity || 0,
-      item.price || 0,
-      total
-    ];
-    startRow++;
+  poDetails.forEach(detail => {
+    sheet.getCell(`A${currentRow}`).value = detail.label;
+    sheet.getCell(`B${currentRow}`).value = detail.value;
+    sheet.getCell(`A${currentRow}`).font = { bold: true };
+    
+    if (['Buyer Address', 'Factory Address', 'Special Comments'].includes(detail.label)) {
+      sheet.getCell(`B${currentRow}`).alignment = { wrapText: true, vertical: 'top' };
+      sheet.getRow(currentRow).height = 30;
+    }
+    currentRow++;
   });
 
-  sheet.getRow(startRow + 1).values = ['', '', '', 'Grand Total:', grandTotal];
-  sheet.getRow(startRow + 1).font = { bold: true };
+  currentRow += 2;
+
+  // Items Section
+  sheet.getCell(`A${currentRow}`).value = 'Items';
+  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+  sheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+  sheet.mergeCells(`A${currentRow}:H${currentRow}`);
+  currentRow++;
+
+  // Items Header
+  const headers = ['Item No', 'Serial Number', 'Description', 'Quantity', 'Price', 'Subtotal', 'Image'];
+  const headerCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+
+  headers.forEach((header, index) => {
+    const cell = sheet.getCell(`${headerCols[index]}${currentRow}`);
+    cell.value = header;
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6E6E6' } };
+    cell.border = {
+      top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+    };
+  });
+  currentRow++;
+
+  // Items Data
+  let grandTotal = 0;
+  if (poItems && poItems.length > 0) {
+    poItems.forEach(item => {
+      const itemRow = currentRow;
+      const subtotal = (item.quantity || 0) * (item.price || 0);
+      grandTotal += subtotal;
+
+      sheet.getCell(`A${itemRow}`).value = item.item_no || '';
+      sheet.getCell(`B${itemRow}`).value = item.serial_number || '';
+      sheet.getCell(`C${itemRow}`).value = item.description || '';
+      sheet.getCell(`D${itemRow}`).value = Number(item.quantity) || 0;
+      sheet.getCell(`E${itemRow}`).value = Number(item.price) || 0;
+      sheet.getCell(`F${itemRow}`).value = subtotal;
+      sheet.getCell(`G${itemRow}`).value = item.item_picture ? 'Image URL' : 'No Image';
+
+      // Formatting
+      sheet.getCell(`E${itemRow}`).numFmt = '"$"#,##0.00';
+      sheet.getCell(`F${itemRow}`).numFmt = '"$"#,##0.00';
+      sheet.getCell(`C${itemRow}`).alignment = { wrapText: true, vertical: 'top' };
+      
+      headerCols.forEach(col => {
+        sheet.getCell(`${col}${itemRow}`).border = {
+          top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+      });
+
+      currentRow++;
+    });
+  } else {
+    sheet.getCell(`A${currentRow}`).value = 'No items found';
+    sheet.mergeCells(`A${currentRow}:G${currentRow}`);
+    sheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+    currentRow++;
+  }
+
+  // Total Row
+  currentRow++;
+  sheet.getCell(`E${currentRow}`).value = 'Total:';
+  sheet.getCell(`F${currentRow}`).value = grandTotal;
+  sheet.getCell(`F${currentRow}`).numFmt = '"$"#,##0.00';
+  
+  ['E', 'F'].forEach(col => {
+    const cell = sheet.getCell(`${col}${currentRow}`);
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD700' } };
+    cell.border = {
+      top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+    };
+  });
 
   return await workbook.xlsx.writeBuffer();
 }

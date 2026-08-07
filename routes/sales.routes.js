@@ -209,7 +209,7 @@ router.get('/:id/generate-invoice', verifyToken, async (req, res) => {
        WHERE si.sale_id = ?`,
       [sale_id]
     );
-    const [compRows] = await pool.query('SELECT * FROM companies WHERE id = ?', [company_id]);
+    const [compRows] = await pool.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
 
     const buffer = await generateInvoiceDocx(saleRows[0], items, compRows[0] || {});
     

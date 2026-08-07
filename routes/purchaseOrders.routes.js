@@ -9,18 +9,28 @@ const router = express.Router();
 // GET /api/purchase-orders -> orders/purchase.php listing
 router.get('/', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
-  const [rows] = await pool.query(
-    `SELECT po.*,
-            GROUP_CONCAT(DISTINCT pi.description SEPARATOR ', ') AS items_description,
-            SUM(pi.quantity) AS total_quantity
-     FROM purchase_orders po
-     LEFT JOIN po_items pi ON po.id = pi.po_id
-     WHERE po.company_id = ?
-     GROUP BY po.id
-     ORDER BY po.created_at DESC`,
-    [company_id]
-  );
-  res.json({ success: true, purchase_orders: rows });
+  try {
+    // Automatically heal any invalid empty/legacy statuses in database
+    await pool.query(
+      "UPDATE purchase_orders SET status = 'in_progress' WHERE (status = '' OR status = 'in_production' OR status = 'confirmed') AND company_id = ?",
+      [company_id]
+    );
+
+    const [rows] = await pool.query(
+      `SELECT po.*,
+              GROUP_CONCAT(DISTINCT pi.description SEPARATOR ', ') AS items_description,
+              SUM(pi.quantity) AS total_quantity
+       FROM purchase_orders po
+       LEFT JOIN po_items pi ON po.id = pi.po_id
+       WHERE po.company_id = ?
+       GROUP BY po.id
+       ORDER BY po.created_at DESC`,
+      [company_id]
+    );
+    res.json({ success: true, purchase_orders: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // GET /api/purchase-orders/next-po-number
@@ -45,7 +55,7 @@ router.get('/next-po-number', verifyToken, async (req, res) => {
         lastNumber = parseInt(parts[2], 10) || 0;
       }
     }
-    
+
     const newPoNumber = `PO-${dateStr}-${String(lastNumber + 1).padStart(3, '0')}`;
     res.json({ success: true, po_number: newPoNumber });
   } catch (err) {
@@ -117,7 +127,7 @@ router.post('/', verifyToken, async (req, res) => {
 
       if (allStages.length > 0) {
         // Handle case where is_enabled might be undefined or 0/1 depending on DB schema
-        const safeStages = allStages.map(s => ({...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1}));
+        const safeStages = allStages.map(s => ({ ...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1 }));
         const dates = distributeDates(po_date, po_delivery_date, safeStages, workingDays, holidays);
         for (let i = 0; i < allStages.length; i++) {
           await conn.query(
@@ -193,9 +203,9 @@ router.put('/:id', verifyToken, async (req, res) => {
       const [holidays] = await conn.query('SELECT * FROM holiday_calendars WHERE company_id = ?', [company_id]);
 
       if (allStages.length > 0) {
-        const safeStages = allStages.map(s => ({...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1}));
+        const safeStages = allStages.map(s => ({ ...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1 }));
         const dates = distributeDates(safe_po_date, safe_delivery_date, safeStages, workingDays, holidays);
-        
+
         for (let i = 0; i < allStages.length; i++) {
           if (dates[i]) {
             await conn.query(
@@ -226,6 +236,38 @@ router.patch('/:id/status', verifyToken, async (req, res) => {
   res.json({ success: true, message: 'Status updated' });
 });
 
+// DELETE /api/purchase-orders/:id
+router.delete('/:id', verifyToken, async (req, res) => {
+  const company_id = req.user.company_id;
+  const po_id = req.params.id;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [poRows] = await conn.query('SELECT po_number FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
+    if (poRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Purchase order not found' });
+    }
+
+    const po_number = poRows[0].po_number;
+
+    await conn.query('DELETE FROM po_items WHERE po_id = ?', [po_id]);
+    await conn.query('DELETE FROM po_workflow_schedules WHERE po_id = ?', [po_id]);
+    await conn.query('DELETE FROM sync_logs WHERE erp_po_id = ?', [po_id]);
+    await conn.query('DELETE FROM purchase_orders WHERE id = ?', [po_id]);
+
+    await conn.commit();
+    await logActivity({ company_id, user_id: req.user.user_id, action: 'delete_po', description: `PO ${po_number} deleted` });
+    res.json({ success: true, message: 'Purchase order deleted successfully' });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ success: false, message: 'Error deleting PO: ' + err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 const multer = require('multer');
 const xlsx = require('xlsx');
 const path = require('path');
@@ -240,6 +282,7 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   }
 });
+
 const upload = multer({ storage: storage });
 const excelUpload = multer({ dest: 'uploads/' });
 
@@ -255,24 +298,24 @@ router.post('/upload-image', verifyToken, upload.single('image'), (req, res) => 
 // POST /api/purchase-orders/import
 router.post('/import', verifyToken, excelUpload.single('file'), async (req, res) => {
   let data, duplicateOption;
-  
+
   if (req.body.data) {
     try {
       // If it's sent as JSON string in form-data
       const parsed = JSON.parse(req.body.data);
       data = parsed.data || parsed;
       duplicateOption = req.body.duplicateOption || parsed.duplicateOption || 'skip';
-    } catch(e) {
+    } catch (e) {
       data = req.body.data;
       duplicateOption = req.body.duplicateOption || 'skip';
     }
   } else {
     data = req.body;
   }
-  
+
   if (req.is('application/json')) {
-     data = req.body.data;
-     duplicateOption = req.body.duplicateOption || 'skip';
+    data = req.body.data;
+    duplicateOption = req.body.duplicateOption || 'skip';
   }
 
   if (!data || !Array.isArray(data) || data.length === 0) {
@@ -281,28 +324,55 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
 
   const company_id = req.user.company_id;
   const summary = { success: 0, failed: 0, skipped: 0, duplicates: 0, warnings: 0, errors: 0, details: [] };
-  
+
+  // 1. Fetch the last PO number for today
+  const dateObj = new Date();
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const dateStr = `${year}${month}${day}`;
+
+  let lastNumber = 0;
+  try {
+    const [rows] = await pool.query(
+      "SELECT MAX(po_number) as last_po FROM purchase_orders WHERE po_number LIKE ? AND company_id = ?",
+      [`PO-${dateStr}-%`, company_id]
+    );
+    if (rows[0] && rows[0].last_po) {
+      const parts = rows[0].last_po.split('-');
+      if (parts.length >= 3) {
+        lastNumber = parseInt(parts[2], 10) || 0;
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching max PO number for import:', err);
+  }
+
   // 1. Group rows
   const poGroups = {};
-  const autoPoPrefix = `PO-AUTO-${Date.now()}`;
-  
+  const factoryToNewPo = {};
+
   data.forEach((row, index) => {
     let po_number = row.po_number;
     if (!po_number) {
       // Group by factory if po_number is missing
       const factoryKey = row.factory ? String(row.factory).trim() : 'UNKNOWN';
-      po_number = `${autoPoPrefix}-${factoryKey.replace(/[^a-zA-Z0-9]/g, '').substring(0,5).toUpperCase()}`;
+      if (!factoryToNewPo[factoryKey]) {
+        lastNumber++;
+        factoryToNewPo[factoryKey] = `PO-${dateStr}-${String(lastNumber).padStart(3, '0')}`;
+      }
+      po_number = factoryToNewPo[factoryKey];
     } else {
       po_number = String(po_number).trim();
     }
-    
+
     if (!row.factory) {
       summary.failed++;
       summary.errors++;
       summary.details.push({ row: index + 1, po_number, item: row.item_no || row.item_name, status: 'failed', reason: 'Factory is required' });
       return; // Skip this row
     }
-    
+
     if (!poGroups[po_number]) {
       poGroups[po_number] = {
         po_number,
@@ -318,14 +388,14 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
         items: []
       };
     }
-    
+
     // Add item
     const qty = Number(row.quantity) || 0;
     if (qty <= 0) {
       summary.warnings++;
       summary.details.push({ row: index + 1, po_number, item: row.item_number || row.item_no || row.item_name, status: 'warning', reason: 'Quantity is 0 or invalid' });
     }
-    
+
     poGroups[po_number].items.push({
       _rowIndex: index + 1,
       serial_number: row.serial_number || null,
@@ -344,50 +414,53 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    
+
     // 2. Process groups
     for (const po_number in poGroups) {
       const group = poGroups[po_number];
 
       if (!group.po_delivery_date) {
-        throw new Error(`Delivery Date is required for PO ${po_number}`);
+        summary.failed++;
+        summary.errors++;
+        summary.details.push({ po_number, status: 'failed', reason: 'Delivery Date is required — set it in the Global Defaults panel before importing.' });
+        continue;
       }
-      
+
       // Duplicate detection
       const [existingPo] = await conn.query('SELECT id FROM purchase_orders WHERE po_number = ? AND company_id = ?', [po_number, company_id]);
-      
+
       let po_id = null;
       let isDuplicate = existingPo.length > 0;
-      
+
       if (isDuplicate) {
-         if (duplicateOption === 'skip') {
-            summary.skipped += group.items.length;
-            summary.duplicates++;
-            summary.details.push({ po_number, status: 'skipped', reason: 'PO already exists (Skip Existing)' });
-            continue;
-         } else if (duplicateOption === 'duplicate') {
-            // Generate a new PO number
-            group.po_number = `${po_number}-DUP-${Math.floor(Math.random() * 1000)}`;
-            summary.duplicates++;
-            summary.details.push({ po_number: group.po_number, status: 'warning', reason: 'Duplicate PO found, created as new (Create Duplicate)' });
-            // Proceed to insert as new
-         } else if (duplicateOption === 'update' || duplicateOption === 'merge') {
-            po_id = existingPo[0].id;
-            // Update master PO fields
-            await conn.query(
-              `UPDATE purchase_orders SET buyer=?, buyer_address=?, factory=?, factory_email=?, factory_address=?, po_date=?, po_delivery_date=?, special_comments=? WHERE id=?`,
-              [group.buyer, group.buyer_address, group.factory, group.factory_email, group.factory_address, group.po_date, group.po_delivery_date, group.special_comments, po_id]
-            );
-            
-            if (duplicateOption === 'update') {
-               // Replace all items
-               await conn.query('DELETE FROM po_items WHERE po_id = ?', [po_id]);
-            }
-            summary.duplicates++;
-            summary.details.push({ po_number, status: 'success', reason: `PO updated (${duplicateOption === 'update' ? 'Update' : 'Merge'} Existing)` });
-         }
+        if (duplicateOption === 'skip') {
+          summary.skipped += group.items.length;
+          summary.duplicates++;
+          summary.details.push({ po_number, status: 'skipped', reason: 'PO already exists (Skip Existing)' });
+          continue;
+        } else if (duplicateOption === 'duplicate') {
+          // Generate a new PO number
+          group.po_number = `${po_number}-DUP-${Math.floor(Math.random() * 1000)}`;
+          summary.duplicates++;
+          summary.details.push({ po_number: group.po_number, status: 'warning', reason: 'Duplicate PO found, created as new (Create Duplicate)' });
+          // Proceed to insert as new
+        } else if (duplicateOption === 'update' || duplicateOption === 'merge') {
+          po_id = existingPo[0].id;
+          // Update master PO fields
+          await conn.query(
+            `UPDATE purchase_orders SET buyer=?, buyer_address=?, factory=?, factory_email=?, factory_address=?, po_date=?, po_delivery_date=?, special_comments=? WHERE id=?`,
+            [group.buyer, group.buyer_address, group.factory, group.factory_email, group.factory_address, group.po_date, group.po_delivery_date, group.special_comments, po_id]
+          );
+
+          if (duplicateOption === 'update') {
+            // Replace all items
+            await conn.query('DELETE FROM po_items WHERE po_id = ?', [po_id]);
+          }
+          summary.duplicates++;
+          summary.details.push({ po_number, status: 'success', reason: `PO updated (${duplicateOption === 'update' ? 'Update' : 'Merge'} Existing)` });
+        }
       }
-      
+
       if (!po_id) { // Insert new PO
         const [result] = await conn.query(
           `INSERT INTO purchase_orders 
@@ -397,57 +470,57 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
         );
         po_id = result.insertId;
       }
-      
+
       // Insert Items
       let itemsInserted = 0;
       for (const it of group.items) {
-         // Validate image url
-         let pic = it.item_picture;
-         if (pic && !String(pic).startsWith('http') && !String(pic).startsWith('/')) pic = null;
-         
-         await conn.query(
+        // Validate image url
+        let pic = it.item_picture;
+        if (pic && !String(pic).startsWith('http') && !String(pic).startsWith('/')) pic = null;
+
+        await conn.query(
           `INSERT INTO po_items (po_id, serial_number, item_no, item_name, description, item_picture, quantity, price, size, eft, finish)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [po_id, it.serial_number, it.item_no, it.item_name, it.description, pic, it.quantity, it.price, it.size, it.eft, it.finish]
-         );
-         itemsInserted++;
+        );
+        itemsInserted++;
       }
-      
+
       if (!isDuplicate || duplicateOption === 'duplicate') {
-         summary.success += itemsInserted;
+        summary.success += itemsInserted;
       }
-      
+
       // Graceful OFC Generation
       if (group.po_date && group.po_delivery_date) {
-          try {
-            const [allStages] = await conn.query('SELECT * FROM production_stages WHERE company_id = ? ORDER BY order_index ASC', [company_id]);
-            const [workingDays] = await conn.query('SELECT * FROM working_days WHERE company_id = ?', [company_id]);
-            const [holidays] = await conn.query('SELECT * FROM holiday_calendars WHERE company_id = ?', [company_id]);
+        try {
+          const [allStages] = await conn.query('SELECT * FROM production_stages WHERE company_id = ? ORDER BY order_index ASC', [company_id]);
+          const [workingDays] = await conn.query('SELECT * FROM working_days WHERE company_id = ?', [company_id]);
+          const [holidays] = await conn.query('SELECT * FROM holiday_calendars WHERE company_id = ?', [company_id]);
 
-            if (allStages.length > 0) {
-               // Check if schedules already exist to avoid duplication
-               const [existingSchedules] = await conn.query('SELECT id FROM po_workflow_schedules WHERE po_id = ?', [po_id]);
-               if (existingSchedules.length === 0 || duplicateOption === 'update') {
-                  if (duplicateOption === 'update') {
-                     await conn.query('DELETE FROM po_workflow_schedules WHERE po_id = ?', [po_id]);
-                  }
-                  const safeStages = allStages.map(s => ({...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1}));
-                  const dates = distributeDates(group.po_date, group.po_delivery_date, safeStages, workingDays, holidays);
-                  for (let i = 0; i < allStages.length; i++) {
-                     await conn.query(
-                        'INSERT INTO po_workflow_schedules (po_id, stage_id, scheduled_start_date, scheduled_end_date) VALUES (?, ?, ?, ?)',
-                        [po_id, allStages[i].id, dates[i]?.start || null, dates[i]?.end || null]
-                     );
-                  }
-               }
+          if (allStages.length > 0) {
+            // Check if schedules already exist to avoid duplication
+            const [existingSchedules] = await conn.query('SELECT id FROM po_workflow_schedules WHERE po_id = ?', [po_id]);
+            if (existingSchedules.length === 0 || duplicateOption === 'update') {
+              if (duplicateOption === 'update') {
+                await conn.query('DELETE FROM po_workflow_schedules WHERE po_id = ?', [po_id]);
+              }
+              const safeStages = allStages.map(s => ({ ...s, is_enabled: s.is_enabled !== undefined ? s.is_enabled : 1 }));
+              const dates = distributeDates(group.po_date, group.po_delivery_date, safeStages, workingDays, holidays);
+              for (let i = 0; i < allStages.length; i++) {
+                await conn.query(
+                  'INSERT INTO po_workflow_schedules (po_id, stage_id, scheduled_start_date, scheduled_end_date) VALUES (?, ?, ?, ?)',
+                  [po_id, allStages[i].id, dates[i]?.start || null, dates[i]?.end || null]
+                );
+              }
             }
-         } catch(e) {
-            summary.warnings++;
-            summary.details.push({ po_number: group.po_number, status: 'warning', reason: 'Failed to generate OFC schedules automatically: ' + e.message });
-         }
+          }
+        } catch (e) {
+          summary.warnings++;
+          summary.details.push({ po_number: group.po_number, status: 'warning', reason: 'Failed to generate OFC schedules automatically: ' + e.message });
+        }
       }
     }
-    
+
     await conn.commit();
     await logActivity({ company_id, user_id: req.user.user_id, action: 'import_pos', description: `Imported POs. Success: ${summary.success}, Skipped: ${summary.skipped}` });
     res.json({ success: true, message: 'Import completed', summary });
@@ -467,11 +540,11 @@ router.post('/:id/send-shipping-update', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const po_id = req.params.id;
   const { message, tracking_number } = req.body;
-  
+
   try {
     const [poRows] = await pool.query('SELECT * FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
     if (!poRows[0]) return res.status(404).json({ success: false, message: 'PO not found' });
-    
+
     const po = poRows[0];
     if (!po.factory_email) {
       return res.status(400).json({ success: false, message: 'Supplier/Factory does not have an email address.' });
@@ -513,7 +586,7 @@ router.get('/:id/generate-docx', verifyToken, async (req, res) => {
     const [compRows] = await pool.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
 
     const buffer = await generatePODocx(poRows[0], items, compRows[0] || {});
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="PO_${poRows[0].po_number}.docx"`);
     res.send(buffer);
@@ -533,12 +606,53 @@ router.get('/:id/generate-xlsx', verifyToken, async (req, res) => {
     const [compRows] = await pool.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
 
     const buffer = await generatePOXlsx(poRows[0], items, compRows[0] || {});
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="PO_${poRows[0].po_number}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: 'Error generating xlsx: ' + err.message });
+  }
+});
+
+const archiver = require('archiver');
+
+// GET /api/purchase-orders/:id/generate-po
+router.get('/:id/generate-po', verifyToken, async (req, res) => {
+  const company_id = req.user.company_id;
+  const po_id = req.params.id;
+  try {
+    const [poRows] = await pool.query('SELECT * FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
+    if (!poRows[0]) return res.status(404).json({ success: false, message: 'PO not found' });
+    const [items] = await pool.query('SELECT * FROM po_items WHERE po_id = ?', [po_id]);
+    const [compRows] = await pool.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
+
+    const po = poRows[0];
+    const company = compRows[0] || {};
+    const fileBaseName = (po.po_number || `PO_${po_id}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const docxBuffer = await generatePODocx(po, items, company);
+    const xlsxBuffer = await generatePOXlsx(po, items, company);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileBaseName}_PO_Files.zip"`);
+
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level.
+    });
+
+    archive.on('error', function (err) {
+      throw err;
+    });
+
+    archive.pipe(res);
+
+    archive.append(docxBuffer, { name: `${fileBaseName}.docx` });
+    archive.append(xlsxBuffer, { name: `${fileBaseName}.xlsx` });
+
+    archive.finalize();
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Error generating PO zip: ' + err.message });
   }
 });
 
@@ -548,25 +662,95 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
   const po_id = req.params.id;
   // Define endpoint URLs for potential locations of the InspectApp API
   const inspectAppUrl = process.env.INSPECTAPP_API_URL || 'http://localhost/InspectAppBackup/git 28 july/api/import_purchase_order.php';
+
   const inspectAppToken = process.env.INSPECTAPP_API_TOKEN || 'f2c_secret_token_123';
 
   const conn = await pool.getConnection();
   try {
     // 1. Fetch PO and Items
     const [poRows] = await conn.query('SELECT * FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
+
     if (!poRows[0]) {
-       return res.status(404).json({ success: false, message: 'PO not found' });
+      return res.status(404).json({ success: false, message: 'PO not found' });
     }
     const po = poRows[0];
+
+    // Fetch ERP company details
+    const [erpCompRows] = await conn.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
+    if (!erpCompRows[0]) {
+      return res.status(404).json({ success: false, message: 'ERP Company not found' });
+    }
+
+    const erpCompanyName = erpCompRows[0].company_name;
+
+    // Search InspectApp ia_companies table with fuzzy/robust matching in JS
+    const [iaCompanies] = await conn.query(
+      'SELECT id, company_name, status, subscription_expires_at FROM uaconsu1_inspectapp.ia_companies'
+    );
+
+    const normalizeCompanyName = (name) => {
+      if (!name) return '';
+      return name.toLowerCase()
+        .replace(/[^a-z0-9]/g, '') // remove non-alphanumeric
+        .replace(/(ltd|limited|inc|co|corp|consultants|consultant)$/g, '') // remove suffixes
+        .replace(/s$/g, ''); // remove plural 's' at end
+    };
+
+    const targetNormal = normalizeCompanyName(erpCompanyName);
     
+    // 1. Exact cleaned match
+    let iaCompany = iaCompanies.find(c => normalizeCompanyName(c.company_name) === targetNormal);
+
+    // 2. Fallback to partial inclusion match
+    if (!iaCompany) {
+        iaCompany = iaCompanies.find(c => {
+        const cNormal = normalizeCompanyName(c.company_name);
+        return cNormal.length > 1 && targetNormal.length > 1 && (cNormal.includes(targetNormal) || targetNormal.includes(cNormal));
+      });
+    }
+
+    if (!iaCompany) {
+      return res.status(400).json({
+        success: false,
+        status: 'not_linked',
+        message: 'Your company is not linked with InspectApp. You can link your InspectApp from here.'
+      });
+    }
+
+    // Verify status = 'approved' (or active)
+    if (iaCompany.status !== 'approved' && iaCompany.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        status: 'inactive',
+        message: `Your InspectApp account status is '${iaCompany.status}'. Please contact InspectApp admin.`
+      });
+    }
+
+    // Verify subscription_expires_at is NULL or >= CURRENT_DATE
+    if (iaCompany.subscription_expires_at) {
+      const expiryDate = new Date(iaCompany.subscription_expires_at);
+      const currentDate = new Date();
+      expiryDate.setHours(0,0,0,0);
+      currentDate.setHours(0,0,0,0);
+      if (expiryDate < currentDate) {
+        return res.status(400).json({
+          success: false,
+          status: 'expired',
+          message: 'Your InspectApp subscription has expired. Please renew your subscription.'
+        });
+      }
+    }
+
     const [items] = await conn.query('SELECT * FROM po_items WHERE po_id = ?', [po_id]);
-    
+
     // 2. Prepare Payload
     const payload = {
       erp_po_id: po.id,
       po_number: po.po_number,
       buyer_name: po.buyer || '',
       factory_name: po.factory || '',
+      company_id: iaCompany.id,
+
       items: items.map(item => {
         let l = '', w = '', h = '';
         if (item.size) {
@@ -575,6 +759,7 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
           if (parts.length >= 2) w = parts[1];
           if (parts.length >= 3) h = parts[2];
         }
+
         return {
           erp_item_id: item.id,
           item_number: item.item_no || '',
@@ -592,7 +777,7 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
         };
       })
     };
-    
+
     // 3. Send POST Request to InspectApp
     const response = await fetch(inspectAppUrl, {
       method: 'POST',
@@ -602,39 +787,56 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
       },
       body: JSON.stringify(payload)
     });
-    
+
     const responseData = await response.text();
+
     let parsedResponse = {};
-    try {
-        parsedResponse = JSON.parse(responseData);
-    } catch(e) {
-        parsedResponse = { message: responseData };
-    }
     
+    try {
+      parsedResponse = JSON.parse(responseData);
+    } catch (e) {
+      parsedResponse = { message: responseData };
+    }
+
     // 4. Handle Response & Log
     if (response.ok && parsedResponse.status === 'success') {
-      await conn.query('UPDATE purchase_orders SET sync_status = ? WHERE id = ?', ['Synced', po_id]);
+      await conn.query(
+        'UPDATE purchase_orders SET sync_status = ?, last_synced_at = NOW() WHERE id = ?',
+        ['Synced', po_id]
+      );
       await conn.query(
         'INSERT INTO sync_logs (erp_po_id, status, response) VALUES (?, ?, ?)',
         [po_id, 'Synced', JSON.stringify(parsedResponse)]
       );
-      res.json({ success: true, message: 'Synced to InspectApp successfully' });
+      const [[updatedPo]] = await conn.query('SELECT sync_status, last_synced_at FROM purchase_orders WHERE id = ?', [po_id]);
+      res.json({ success: true, message: 'Synced to InspectApp successfully', sync_status: updatedPo.sync_status, last_synced_at: updatedPo.last_synced_at });
     } else {
-      await conn.query('UPDATE purchase_orders SET sync_status = ? WHERE id = ?', ['Sync Failed', po_id]);
+      const errMsg = parsedResponse.message || `HTTP ${response.status}: Unknown error`;
+      await conn.query(
+        'UPDATE purchase_orders SET sync_status = ?, last_synced_at = NOW() WHERE id = ?',
+        ['Sync Failed', po_id]
+      );
       await conn.query(
         'INSERT INTO sync_logs (erp_po_id, status, response, error) VALUES (?, ?, ?, ?)',
-        [po_id, 'Sync Failed', JSON.stringify(parsedResponse), `HTTP ${response.status}: ${parsedResponse.message || 'Unknown error'}`]
+        [po_id, 'Sync Failed', JSON.stringify(parsedResponse), errMsg]
       );
-      res.status(400).json({ success: false, message: 'Sync failed: ' + (parsedResponse.message || 'Unknown error') });
+      const [[updatedPo]] = await conn.query('SELECT sync_status, last_synced_at FROM purchase_orders WHERE id = ?', [po_id]);
+      res.status(400).json({ success: false, message: 'Sync failed: ' + errMsg, sync_status: updatedPo.sync_status, last_synced_at: updatedPo.last_synced_at });
     }
-    
+
   } catch (err) {
-    await conn.query('UPDATE purchase_orders SET sync_status = ? WHERE id = ?', ['Sync Failed', po_id]);
-    await conn.query(
+    try {
+      await conn.query(
+        'UPDATE purchase_orders SET sync_status = ?, last_synced_at = NOW() WHERE id = ?',
+        ['Sync Failed', po_id]
+      );
+      await conn.query(
         'INSERT INTO sync_logs (erp_po_id, status, error) VALUES (?, ?, ?)',
         [po_id, 'Sync Failed', err.message]
-    );
-    res.status(500).json({ success: false, message: 'Error syncing to InspectApp: ' + err.message });
+      );
+    } catch (_) { }
+    const [[updatedPo]] = await conn.query('SELECT sync_status, last_synced_at FROM purchase_orders WHERE id = ?', [po_id]).catch(() => [[{}]]);
+    res.status(500).json({ success: false, message: 'Error syncing to InspectApp: ' + err.message, sync_status: updatedPo?.sync_status, last_synced_at: updatedPo?.last_synced_at });
   } finally {
     conn.release();
   }

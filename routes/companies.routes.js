@@ -32,16 +32,50 @@ router.get('/:id', verifyToken, requireAdmin, async (req, res) => {
 router.post('/', verifyToken, requireSuperAdmin, async (req, res) => {
   const { company_code, company_name, email, contact_number, address } = req.body;
   try {
-    await pool.query(
+    const [result] = await pool.query(
       `INSERT INTO companies (company_code, company_name, email, contact_number, address)
        VALUES (?, ?, ?, ?, ?)`,
       [company_code, company_name, email, contact_number, address]
     );
+    const newCompanyId = result.insertId;
+
+    // Seed default workflow template, stages, and working days
+    const [tempRes] = await pool.query(
+      'INSERT INTO workflow_templates (company_id, name, description) VALUES (?, ?, ?)',
+      [newCompanyId, 'Default Template', 'Automatically generated template']
+    );
+
+    const [verRes] = await pool.query(
+      'INSERT INTO workflow_template_versions (template_id, version_number, is_active) VALUES (?, ?, ?)',
+      [tempRes.insertId, 1, true]
+    );
+
+    const versionId = verRes.insertId;
+    const defaultStages = ['Raw Material', 'Fabrication', 'Polishing', 'Packing', 'Inspection'];
+    for (let i = 0; i < defaultStages.length; i++) {
+      await pool.query(
+        'INSERT INTO production_stages (company_id, template_version_id, stage_name, order_index, color) VALUES (?, ?, ?, ?, ?)',
+        [newCompanyId, versionId, defaultStages[i], i + 1, '#4F46E5']
+      );
+    }
+
+    const days = [
+      { d: 0, w: false }, { d: 1, w: true }, { d: 2, w: true }, { d: 3, w: true },
+      { d: 4, w: true }, { d: 5, w: true }, { d: 6, w: false }
+    ];
+    for (const d of days) {
+      await pool.query(
+        'INSERT INTO working_days (company_id, day_of_week, is_working) VALUES (?, ?, ?)',
+        [newCompanyId, d.d, d.w]
+      );
+    }
+
     await logActivity({
       user_id: req.user.user_id,
       action: 'add_company',
       description: `Company "${company_name}" added`,
     });
+    
     res.json({ success: true, message: 'Company added successfully!' });
   } catch (err) {
     res.status(400).json({ success: false, message: 'Error adding company: ' + err.message });
@@ -67,12 +101,12 @@ router.put('/:id', verifyToken, requireSuperAdmin, upload.single('invoice_templa
         updated_at = NOW()`;
     let params = [company_name, company_code, address, contact_number, email, status,
       smtp_host, smtp_email, smtp_port || null, smtp_from_name];
-    
+
     if (smtp_password) {
       sql += `, smtp_password = ?`;
       params.push(smtp_password);
     }
-    
+
     if (req.file) {
       const templatePath = req.file.path + path.extname(req.file.originalname);
       fs.renameSync(req.file.path, templatePath); // add extension back

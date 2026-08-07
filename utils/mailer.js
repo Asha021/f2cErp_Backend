@@ -6,6 +6,7 @@ async function getTransporter(companyId) {
     'SELECT smtp_host, smtp_email, smtp_password, smtp_port, smtp_from_name FROM companies WHERE company_id = ?',
     [companyId]
   );
+
   const config = rows[0];
 
   if (!config || !config.smtp_host || !config.smtp_email || !config.smtp_password) {
@@ -15,7 +16,7 @@ async function getTransporter(companyId) {
   const transporter = nodemailer.createTransport({
     host: config.smtp_host,
     port: config.smtp_port || 587,
-    secure: config.smtp_port === 465, 
+    secure: config.smtp_port === 465,
     auth: {
       user: config.smtp_email,
       pass: config.smtp_password,
@@ -28,7 +29,6 @@ async function getTransporter(companyId) {
 async function sendEmail({ companyId, to, subject, html, attachments = [] }) {
   try {
     const { transporter, config } = await getTransporter(companyId);
-    
     const mailOptions = {
       from: `"${config.smtp_from_name || 'F2C ERP'}" <${config.smtp_email}>`,
       to,

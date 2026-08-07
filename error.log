@@ -66,3 +66,37 @@ AggregateError:
     at router.process_params (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
     at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
     at urlencodedParser (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)
+AggregateError: 
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\routes\auth.routes.js:19:31
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at router.handle (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:175:3)
+    at router (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:47:12)
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at trim_prefix (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:328:13)
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:286:9
+    at router.process_params (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at urlencodedParser (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)
+AggregateError: 
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\routes\auth.routes.js:19:31
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at router.handle (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:175:3)
+    at router (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:47:12)
+    at Layer.handle [as handle_request] (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at trim_prefix (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:328:13)
+    at C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:286:9
+    at router.process_params (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at urlencodedParser (C:\Users\apal6\OneDrive\Desktop\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)

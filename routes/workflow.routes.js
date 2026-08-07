@@ -287,6 +287,29 @@ router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
       po_id, stage_id
     ]);
 
+    // Automatically transition overall PO status based on stage statuses
+    const [poStages] = await pool.query(`
+      SELECT ps.stage_id, ps.status, stg.order_index
+      FROM po_workflow_schedules ps
+      JOIN production_stages stg ON ps.stage_id = stg.id
+      WHERE ps.po_id = ?
+      ORDER BY stg.order_index ASC
+    `, [po_id]);
+
+    if (poStages.length > 0) {
+      const allCompleted = poStages.every(s => s.status === 'completed');
+      const anyStarted = poStages.some(s => s.status !== 'pending');
+      
+      let newPoStatus = 'draft';
+      if (allCompleted) {
+        newPoStatus = 'completed';
+      } else if (anyStarted) {
+        newPoStatus = 'in_progress';
+      }
+      
+      await pool.query('UPDATE purchase_orders SET status = ? WHERE id = ?', [newPoStatus, po_id]);
+    }
+
     // Insert Audit log
     await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`, 
         [company_id, po_id, 'STATUS_UPDATE', `Stage ${stage_id} updated to ${status}`, req.user.user_id]);
@@ -334,10 +357,30 @@ router.post('/po/:po_id/shipments', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const po_id = req.params.po_id;
   const { shipped_quantity, shipment_date, notes } = req.body;
+
+  const shipQty = parseInt(shipped_quantity, 10);
+  if (isNaN(shipQty) || shipQty <= 0) {
+    return res.status(400).json({ success: false, message: 'Please enter a valid quantity' });
+  }
+
   try {
+    // Fetch total items quantity
+    const [items] = await pool.query('SELECT SUM(quantity) as total FROM po_items WHERE po_id = ?', [po_id]);
+    const totalOrdered = items[0].total || 0;
+
+    // Fetch already shipped
+    const [shipped] = await pool.query('SELECT SUM(shipped_quantity) as total_shipped FROM po_shipments WHERE po_id = ?', [po_id]);
+    const totalShipped = shipped[0].total_shipped || 0;
+
+    const pendingQty = Math.max(0, totalOrdered - totalShipped);
+
+    if (shipQty > pendingQty) {
+      return res.status(400).json({ success: false, message: `Cannot ship more than pending quantity (${pendingQty} units)` });
+    }
+
     await pool.query(
       'INSERT INTO po_shipments (company_id, po_id, shipped_quantity, shipment_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-      [company_id, po_id, shipped_quantity, shipment_date || null, notes || '', req.user.user_id]
+      [company_id, po_id, shipQty, shipment_date || null, notes || '', req.user.user_id]
     );
     // Log audit
     await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`, 
@@ -371,6 +414,12 @@ router.post('/po/:po_id/report/email', verifyToken, async (req, res) => {
 router.get('/dashboard', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   try {
+    // Automatically heal any invalid empty/legacy statuses in database
+    await pool.query(
+      "UPDATE purchase_orders SET status = 'in_progress' WHERE (status = '' OR status = 'in_production' OR status = 'confirmed') AND company_id = ?",
+      [company_id]
+    );
+
     // Quick legacy dashboard
     const [stages] = await pool.query(
       'SELECT id, stage_name as name, order_index, color FROM production_stages WHERE company_id = ? ORDER BY order_index ASC LIMIT 10',
