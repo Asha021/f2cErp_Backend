@@ -697,13 +697,13 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     };
 
     const targetNormal = normalizeCompanyName(erpCompanyName);
-    
+
     // 1. Exact cleaned match
     let iaCompany = iaCompanies.find(c => normalizeCompanyName(c.company_name) === targetNormal);
 
     // 2. Fallback to partial inclusion match
     if (!iaCompany) {
-        iaCompany = iaCompanies.find(c => {
+      iaCompany = iaCompanies.find(c => {
         const cNormal = normalizeCompanyName(c.company_name);
         return cNormal.length > 1 && targetNormal.length > 1 && (cNormal.includes(targetNormal) || targetNormal.includes(cNormal));
       });
@@ -730,8 +730,8 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     if (iaCompany.subscription_expires_at) {
       const expiryDate = new Date(iaCompany.subscription_expires_at);
       const currentDate = new Date();
-      expiryDate.setHours(0,0,0,0);
-      currentDate.setHours(0,0,0,0);
+      expiryDate.setHours(0, 0, 0, 0);
+      currentDate.setHours(0, 0, 0, 0);
       if (expiryDate < currentDate) {
         return res.status(400).json({
           success: false,
@@ -791,7 +791,7 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     const responseData = await response.text();
 
     let parsedResponse = {};
-    
+
     try {
       parsedResponse = JSON.parse(responseData);
     } catch (e) {
