@@ -3,87 +3,13 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } = require('docx');
+const { generatePODocxAdvanced } = require('./generatePODocx');
 
 /**
  * Generate a standard Purchase Order DOCX document using the PHP template.
  */
 async function generatePODocx(poData, poItems, companyData) {
-  const tableRows = [
-    new TableRow({
-      children: [
-        new TableCell({ children: [new Paragraph({ text: "Item No", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Description", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Quantity", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Price", style: "bold" })] }),
-        new TableCell({ children: [new Paragraph({ text: "Total", style: "bold" })] }),
-      ],
-    }),
-  ];
-
-  let grandTotal = 0;
-  if (poItems && poItems.length > 0) {
-    poItems.forEach(item => {
-      const subtotal = (item.quantity || 0) * (item.price || 0);
-      grandTotal += subtotal;
-      tableRows.push(
-        new TableRow({
-          children: [
-            new TableCell({ children: [new Paragraph(item.item_no || '')] }),
-            new TableCell({ children: [new Paragraph(item.description || '')] }),
-            new TableCell({ children: [new Paragraph(String(item.quantity || 0))] }),
-            new TableCell({ children: [new Paragraph(`$${Number(item.price || 0).toFixed(2)}`)] }),
-            new TableCell({ children: [new Paragraph(`$${subtotal.toFixed(2)}`)] }),
-          ],
-        })
-      );
-    });
-  }
-
-  const doc = new Document({
-    sections: [
-      {
-        properties: {},
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({ text: companyData?.company_name || 'COMPANY NAME', bold: true, size: 36 }),
-            ],
-            spacing: { after: 200 },
-          }),
-          new Paragraph({ text: "PURCHASE ORDER", heading: "Heading1", alignment: "center", spacing: { after: 400 } }),
-          new Paragraph(`PO Number: ${poData.po_number || 'N/A'}`),
-          new Paragraph(`Date: ${poData.po_date ? new Date(poData.po_date).toLocaleDateString() : 'N/A'}`),
-          new Paragraph(`Delivery Date: ${poData.po_delivery_date ? new Date(poData.po_delivery_date).toLocaleDateString() : 'N/A'}`),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({ text: "Buyer Details:", bold: true }),
-          new Paragraph(`Name: ${poData.buyer || 'N/A'}`),
-          new Paragraph(`Address: ${poData.buyer_address || 'N/A'}`),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({ text: "Factory Details:", bold: true }),
-          new Paragraph(`Name: ${poData.factory || 'N/A'}`),
-          new Paragraph(`Email: ${poData.factory_email || 'N/A'}`),
-          new Paragraph(`Address: ${poData.factory_address || 'N/A'}`),
-          new Paragraph({ text: "", spacing: { after: 400 } }),
-          new Table({
-            rows: tableRows,
-            width: { size: 100, type: WidthType.PERCENTAGE },
-          }),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: `Grand Total: $${grandTotal.toFixed(2)}`, bold: true, size: 28 }),
-            ],
-            alignment: "right",
-          }),
-          new Paragraph({ text: "", spacing: { after: 200 } }),
-          new Paragraph({ text: "Special Comments:", bold: true }),
-          new Paragraph(`${poData.special_comments || 'None'}`),
-        ],
-      },
-    ],
-  });
-
-  return await Packer.toBuffer(doc);
+  return generatePODocxAdvanced(poData, poItems, companyData);
 }
 
 /**
