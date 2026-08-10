@@ -7,53 +7,83 @@ const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthT
 /**
  * Generate a standard Purchase Order DOCX document using the PHP template.
  */
-function generatePODocx(poData, poItems, companyData) {
-  return new Promise((resolve, reject) => {
-    const phpPath = 'C:\\\\xampp\\\\php\\\\php.exe';
-    const wrapperPath = path.join(__dirname, 'generate_po_wrapper.php');
-    
-    const payload = JSON.stringify({ po: poData, items: poItems });
-    
-    const child = execFile(phpPath, [wrapperPath], (error, stdout, stderr) => {
-      if (error) {
-        console.error('PHP Wrapper Error:', error);
-        console.error('PHP Wrapper Stderr:', stderr);
-        return reject(error);
-      }
-      
-      const output = stdout.trim();
-      if (output.startsWith('ERROR:')) {
-        return reject(new Error(output));
-      }
-      
-      // The output should be the temporary file path
-      const tempPath = output;
-      
-      if (!fs.existsSync(tempPath)) {
-        return reject(new Error('PHP generated file not found at: ' + tempPath));
-      }
-      
-      // Read the file and return buffer
-      const buffer = fs.readFileSync(tempPath);
-      
-      // Clean up the temporary file
-      try {
-        fs.unlinkSync(tempPath);
-      } catch (cleanupErr) {
-        console.error('Failed to clean up temp file:', cleanupErr);
-      }
-      
-      resolve(buffer);
+async function generatePODocx(poData, poItems, companyData) {
+  const tableRows = [
+    new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ text: "Item No", style: "bold" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Description", style: "bold" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Quantity", style: "bold" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Price", style: "bold" })] }),
+        new TableCell({ children: [new Paragraph({ text: "Total", style: "bold" })] }),
+      ],
+    }),
+  ];
+
+  let grandTotal = 0;
+  if (poItems && poItems.length > 0) {
+    poItems.forEach(item => {
+      const subtotal = (item.quantity || 0) * (item.price || 0);
+      grandTotal += subtotal;
+      tableRows.push(
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph(item.item_no || '')] }),
+            new TableCell({ children: [new Paragraph(item.description || '')] }),
+            new TableCell({ children: [new Paragraph(String(item.quantity || 0))] }),
+            new TableCell({ children: [new Paragraph(`$${Number(item.price || 0).toFixed(2)}`)] }),
+            new TableCell({ children: [new Paragraph(`$${subtotal.toFixed(2)}`)] }),
+          ],
+        })
+      );
     });
-    
-    // Write JSON payload to stdin of the PHP process
-    if (child.stdin) {
-      child.stdin.write(payload);
-      child.stdin.end();
-    } else {
-      reject(new Error('Failed to open stdin for PHP process'));
-    }
+  }
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({ text: companyData?.company_name || 'COMPANY NAME', bold: true, size: 36 }),
+            ],
+            spacing: { after: 200 },
+          }),
+          new Paragraph({ text: "PURCHASE ORDER", heading: "Heading1", alignment: "center", spacing: { after: 400 } }),
+          new Paragraph(`PO Number: ${poData.po_number || 'N/A'}`),
+          new Paragraph(`Date: ${poData.po_date ? new Date(poData.po_date).toLocaleDateString() : 'N/A'}`),
+          new Paragraph(`Delivery Date: ${poData.po_delivery_date ? new Date(poData.po_delivery_date).toLocaleDateString() : 'N/A'}`),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ text: "Buyer Details:", bold: true }),
+          new Paragraph(`Name: ${poData.buyer || 'N/A'}`),
+          new Paragraph(`Address: ${poData.buyer_address || 'N/A'}`),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ text: "Factory Details:", bold: true }),
+          new Paragraph(`Name: ${poData.factory || 'N/A'}`),
+          new Paragraph(`Email: ${poData.factory_email || 'N/A'}`),
+          new Paragraph(`Address: ${poData.factory_address || 'N/A'}`),
+          new Paragraph({ text: "", spacing: { after: 400 } }),
+          new Table({
+            rows: tableRows,
+            width: { size: 100, type: WidthType.PERCENTAGE },
+          }),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: `Grand Total: $${grandTotal.toFixed(2)}`, bold: true, size: 28 }),
+            ],
+            alignment: "right",
+          }),
+          new Paragraph({ text: "", spacing: { after: 200 } }),
+          new Paragraph({ text: "Special Comments:", bold: true }),
+          new Paragraph(`${poData.special_comments || 'None'}`),
+        ],
+      },
+    ],
   });
+
+  return await Packer.toBuffer(doc);
 }
 
 /**
