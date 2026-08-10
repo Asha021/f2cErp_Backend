@@ -3,13 +3,13 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } = require('docx');
-const { generatePODocxAdvanced } = require('./generatePODocx');
+const { generatePODocxFromTemplate } = require('./generatePODocxFromTemplate');
 
 /**
  * Generate a standard Purchase Order DOCX document using the PHP template.
  */
 async function generatePODocx(poData, poItems, companyData) {
-  return generatePODocxAdvanced(poData, poItems, companyData);
+  return generatePODocxFromTemplate(poData, poItems, companyData);
 }
 
 /**
