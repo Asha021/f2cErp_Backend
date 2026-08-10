@@ -22,8 +22,15 @@ const workflowRoutes = require('./routes/workflow.routes');
 const app = express();
 
 // app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+// app.use(cors({
+//   origin: process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+//   credentials: true
+// }));
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+  origin: [
+    process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+    "http://localhost:5173"
+  ],
   credentials: true
 }));
 
