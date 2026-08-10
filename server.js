@@ -10,13 +10,6 @@ uploadDirs.forEach(dir => {
   }
 });
 
-const fs = require('fs');
-const uploadDirs = ['uploads', 'uploads/items', 'uploads/templates', 'uploads/invoices', 'uploads/pos', 'uploads/reports'];
-uploadDirs.forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
 
 const authRoutes = require('./routes/auth.routes');
 const companiesRoutes = require('./routes/companies.routes');
