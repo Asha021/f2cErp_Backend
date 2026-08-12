@@ -40,7 +40,7 @@ router.post('/upload', verifyToken, upload.single('document'), async (req, res) 
   if (!po_id || !document_type || !req.file) {
     return res.status(400).json({ success: false, message: 'Missing required fields' });
   }
-  
+
   try {
     const docPath = req.file.path + path.extname(req.file.originalname);
     fs.renameSync(req.file.path, docPath);
@@ -49,7 +49,7 @@ router.post('/upload', verifyToken, upload.single('document'), async (req, res) 
     const [po] = await pool.query(`
       SELECT COALESCE(SUM(quantity), 0) as po_quantity 
       FROM po_items WHERE po_id = ?`, [po_id]);
-      
+
     const po_quantity = po[0] ? po[0].po_quantity : 0;
 
     await pool.query(

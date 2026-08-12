@@ -5,6 +5,15 @@ const path = require('path');
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } = require('docx');
 const { generatePODocxFromTemplate } = require('./generatePODocxFromTemplate');
 
+// Safe date formatter — splits YYYY-MM-DD string directly to avoid UTC/local timezone shift
+function formatDate(val) {
+    if (!val) return '';
+    const str = String(val).substring(0, 10);
+    const parts = str.split('-');
+    if (parts.length !== 3) return str;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+}
+
 /**
  * Generate a standard Purchase Order DOCX document using the PHP template.
  */
@@ -47,14 +56,14 @@ async function generatePOXlsx(poData, poItems, companyData) {
 
   // PO Information
   const poDetails = [
-    { label: 'PO Number', value: poData.po_number || '' },
-    { label: 'PO Date', value: poData.po_date ? new Date(poData.po_date).toLocaleDateString('en-GB') : '' },
-    { label: 'Buyer', value: poData.buyer || '' },
-    { label: 'Buyer Address', value: poData.buyer_address || '' },
-    { label: 'Factory', value: poData.factory || '' },
-    { label: 'Factory Email', value: poData.factory_email || '' },
-    { label: 'Factory Address', value: poData.factory_address || '' },
-    { label: 'Delivery Date', value: poData.po_delivery_date ? new Date(poData.po_delivery_date).toLocaleDateString('en-GB') : '' },
+    { label: 'PO Number',        value: poData.po_number || '' },
+    { label: 'PO Date',          value: formatDate(poData.po_date) },
+    { label: 'Buyer',            value: poData.buyer || '' },
+    { label: 'Buyer Address',    value: poData.buyer_address || '' },
+    { label: 'Factory',          value: poData.factory || '' },
+    { label: 'Factory Email',    value: poData.factory_email || '' },
+    { label: 'Factory Address',  value: poData.factory_address || '' },
+    { label: 'Delivery Date',    value: formatDate(poData.po_delivery_date) },
     { label: 'Special Comments', value: poData.special_comments || '' }
   ];
 
