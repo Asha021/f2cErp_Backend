@@ -3,6 +3,9 @@ const pool = require('../config/db');
 const { verifyToken } = require('../middleware/auth');
 const { logActivity } = require('../utils/activityLog');
 const { distributeDates } = require('../utils/workflowUtils');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('../config/cloudinary');
+
 
 const router = express.Router();
 
@@ -82,6 +85,7 @@ router.post('/', verifyToken, async (req, res) => {
   }
 
   const conn = await pool.getConnection();
+
   try {
     await conn.beginTransaction();
     const safe_po_date = po_date ? po_date : null;
@@ -93,6 +97,7 @@ router.post('/', verifyToken, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
       [company_id, po_number, safe_po_date, buyer, buyer_address, factory, factory_email, factory_address, safe_delivery_date, special_comments]
     );
+
     const po_id = result.insertId;
 
     if (Array.isArray(items)) {
@@ -272,26 +277,43 @@ const multer = require('multer');
 const xlsx = require('xlsx');
 const path = require('path');
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/items/');
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, 'uploads/items/');
+//   },
+//   filename: function (req, file, cb) {
+//     const ext = path.extname(file.originalname);
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+//   }
+// });
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'po-items',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    public_id: (req, file) => `image-${Date.now()}-${Math.round(Math.random() * 1e9)}`,
   },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
 });
 
 const upload = multer({ storage: storage });
 const excelUpload = multer({ dest: 'uploads/' });
 
 // POST /api/purchase-orders/upload-image
+// router.post('/upload-image', verifyToken, upload.single('image'), (req, res) => {
+//   if (!req.file) {
+//     return res.status(400).json({ success: false, message: 'No file uploaded' });
+//   }
+//   const imageUrl = `/uploads/items/${req.file.filename}`;
+//   res.json({ success: true, url: imageUrl });
+// });
+
 router.post('/upload-image', verifyToken, upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }
-  const imageUrl = `/uploads/items/${req.file.filename}`;
+  const imageUrl = req.file.path; // Cloudinary returns full URL in req.file.path
   res.json({ success: true, url: imageUrl });
 });
 
@@ -697,13 +719,13 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     };
 
     const targetNormal = normalizeCompanyName(erpCompanyName);
-    
+
     // 1. Exact cleaned match
     let iaCompany = iaCompanies.find(c => normalizeCompanyName(c.company_name) === targetNormal);
 
     // 2. Fallback to partial inclusion match
     if (!iaCompany) {
-        iaCompany = iaCompanies.find(c => {
+      iaCompany = iaCompanies.find(c => {
         const cNormal = normalizeCompanyName(c.company_name);
         return cNormal.length > 1 && targetNormal.length > 1 && (cNormal.includes(targetNormal) || targetNormal.includes(cNormal));
       });
@@ -730,8 +752,8 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     if (iaCompany.subscription_expires_at) {
       const expiryDate = new Date(iaCompany.subscription_expires_at);
       const currentDate = new Date();
-      expiryDate.setHours(0,0,0,0);
-      currentDate.setHours(0,0,0,0);
+      expiryDate.setHours(0, 0, 0, 0);
+      currentDate.setHours(0, 0, 0, 0);
       if (expiryDate < currentDate) {
         return res.status(400).json({
           success: false,
@@ -791,7 +813,7 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
     const responseData = await response.text();
 
     let parsedResponse = {};
-    
+
     try {
       parsedResponse = JSON.parse(responseData);
     } catch (e) {

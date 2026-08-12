@@ -10,7 +10,6 @@ uploadDirs.forEach(dir => {
   }
 });
 
-
 const authRoutes = require('./routes/auth.routes');
 const companiesRoutes = require('./routes/companies.routes');
 const usersRoutes = require('./routes/users.routes');
@@ -23,15 +22,22 @@ const workflowRoutes = require('./routes/workflow.routes');
 const app = express();
 
 // app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+// app.use(cors({
+//   origin: process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+//   credentials: true
+// }));
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+  origin: [
+    process.env.CORS_ORIGIN || "https://f2c-erp-frontend.vercel.app",
+    "http://localhost:5173"
+  ],
   credentials: true
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/uploads', express.static('uploads'));
+// app.use('/uploads', express.static('uploads'));
 app.get('/api/health', (req, res) => res.json({ success: true, message: 'ERP API running' }));
 
 app.use('/api/auth', authRoutes);
