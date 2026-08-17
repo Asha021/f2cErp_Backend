@@ -36,6 +36,21 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
 
     let xml = zip.file('word/document.xml').asText();
 
+        // ── Remove Empty Spacer Rows ──────────────────────────────────────────
+    // The Word template contains 7 hardcoded empty rows under the main item row.
+    // If we don't delete them, they push the table down and create blank pages.
+    const emptyRowRegex = /<w:tr[ >][\s\S]*?<\/w:tr>/g;
+    let emptyMatch;
+    let rowsToRemove = [];
+    while ((emptyMatch = emptyRowRegex.exec(xml)) !== null) {
+        const trXml = emptyMatch[0];
+        const text = (trXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('').trim();
+        if (text === '') rowsToRemove.push(trXml);
+    }
+    rowsToRemove.forEach(row => {
+        xml = xml.replace(row, '');
+    });
+    
     // ── Find and clone the items data row ─────────────────────────────────
     // Template structure (confirmed by inspection):
     //   Row 1: PO header row — contains ${delivery_date}
