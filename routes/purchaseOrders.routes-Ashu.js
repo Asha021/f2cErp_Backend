@@ -451,6 +451,17 @@ router.post('/upload-image', verifyToken, upload.single('image'), (req, res) => 
 });
 
 // POST /api/purchase-orders/import
+
+// Helper: strip currency symbols / commas and parse price safely
+const parsePrice = (val) => {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  // Remove currency symbols, spaces, commas (e.g. "$0.50", "1,200.00", "USD 0.50")
+  const cleaned = val.toString().replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 router.post('/import', verifyToken, excelUpload.single('file'), async (req, res) => {
   let data, duplicateOption;
 
@@ -559,7 +570,7 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
       description: row.description || null,
       item_picture: row.item_picture || null,
       quantity: qty,
-      price: Number(row.price) || 0,
+      price: parsePrice(row.price),
       size: row.size || null,
       eft: row.eft || null,
       finish: row.finish || null

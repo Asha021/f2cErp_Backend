@@ -6,14 +6,90 @@ const { logActivity } = require('../utils/activityLog');
 const router = express.Router();
 
 // GET /api/sales -> orders/sales.php listing
+// router.get('/', verifyToken, async (req, res) => {
+//   const company_id = req.user.company_id;
+
+//   // pagination
+//   const page = Math.max(parseInt(req.query.page) || 1, 1);
+//   const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+//   const offset = (page - 1) * limit;
+
+//   const [rows] = await pool.query(
+//     `SELECT s.sale_id, s.customer_name, s.sale_date, s.total_amount, s.status, s.created_at
+//      FROM sales s
+//      ORDER BY s.created_at DESC
+//      LIMIT ? OFFSET ?`,
+//      [limit,offset]
+//   );
+
+//   // get total sale
+//   const [totalSale] = await pool.query(
+//     `
+//     SELECT COUNT(*) AS TOTAL
+//     FROM sales 
+//     WHERE company_id = ?
+//     `,
+//     [company_id]
+//   );
+
+//   const total = totalSale[0]?.TOTAL || 0;
+//   const totalPages = Math.ceil(total/limit)
+
+//   res.json({ success: true, sales: rows, pagination:{
+//     total,
+//     page,
+//     limit,
+//     totalPages
+//   } });
+// }); 
+
+// GET /api/sales -> orders/sales.php listing
+
 router.get('/', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
+
+  // Pagination
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+  const offset = (page - 1) * limit;
+
+  // Get paginated sales for current company
   const [rows] = await pool.query(
-    `SELECT s.sale_id, s.customer_name, s.sale_date, s.total_amount, s.status, s.created_at
+    `SELECT 
+       s.sale_id,
+       s.customer_name,
+       s.sale_date,
+       s.total_amount,
+       s.status,
+       s.created_at
      FROM sales s
-     ORDER BY s.created_at DESC`
+     WHERE s.company_id = ?
+     ORDER BY s.created_at DESC
+     LIMIT ? OFFSET ?`,
+    [company_id, limit, offset]
   );
-  res.json({ success: true, sales: rows });
+
+  // Get total sales for current company
+  const [totalSale] = await pool.query(
+    `SELECT COUNT(*) AS total
+     FROM sales
+     WHERE company_id = ?`,
+    [company_id]
+  );
+
+  const total = totalSale[0]?.total || 0;
+  const totalPages = Math.ceil(total / limit);
+
+  res.json({
+    success: true,
+    sales: rows,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages
+    }
+  });
 });
 
 // GET /api/sales/:id -> sale + line items
@@ -97,14 +173,14 @@ router.get('/:id/invoice', verifyToken, async (req, res) => {
   // but we fixed verifyToken to read from query.
   const [saleRows] = await pool.query('SELECT * FROM sales WHERE sale_id = ?', [req.params.id]);
   if (!saleRows[0]) return res.status(404).send('Sale not found');
-  
+
   const [items] = await pool.query(
     `SELECT si.quantity, si.unit_price, si.total_price, i.item_name
      FROM sale_items si LEFT JOIN items i ON si.item_id = i.item_id
      WHERE si.sale_id = ?`,
     [req.params.id]
   );
-  
+
   const doc = new PDFDocument({ margin: 50 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="invoice_${req.params.id}.pdf"`);
@@ -122,10 +198,10 @@ router.get('/:id/invoice', verifyToken, async (req, res) => {
   items.forEach(it => {
     doc.text(`${it.item_name || 'Unknown Item'} - ${it.quantity} x $${it.unit_price} = $${it.total_price}`);
   });
-  
+
   doc.moveDown(2);
   doc.fontSize(14).text(`Total: $${saleRows[0].total_amount}`, { align: 'right' });
-  
+
   doc.end();
 });
 
@@ -133,7 +209,7 @@ router.get('/:id/invoice', verifyToken, async (req, res) => {
 router.get('/:id/bol', verifyToken, async (req, res) => {
   const [saleRows] = await pool.query('SELECT * FROM sales WHERE sale_id = ?', [req.params.id]);
   if (!saleRows[0]) return res.status(404).send('Sale not found');
-  
+
   const doc = new PDFDocument({ margin: 50 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="bol_${req.params.id}.pdf"`);
@@ -147,7 +223,7 @@ router.get('/:id/bol', verifyToken, async (req, res) => {
   doc.text(`Consignee: ${saleRows[0].customer_name}`);
   doc.moveDown(2);
   doc.text('Carrier Signature: _______________________      Date: ______________');
-  
+
   doc.end();
 });
 
@@ -170,8 +246,8 @@ router.post('/import', verifyToken, async (req, res) => {
           `INSERT INTO sales (company_id, customer_name, sale_date, total_amount, status, created_by)
            VALUES (?, ?, ?, ?, 'completed', ?)`,
           [
-            company_id, String(row.customer_name), 
-            row.sale_date || new Date(), 
+            company_id, String(row.customer_name),
+            row.sale_date || new Date(),
             row.total_amount || 0, req.user.user_id
           ]
         );
@@ -212,7 +288,7 @@ router.get('/:id/generate-invoice', verifyToken, async (req, res) => {
     const [compRows] = await pool.query('SELECT * FROM companies WHERE company_id = ?', [company_id]);
 
     const buffer = await generateInvoiceDocx(saleRows[0], items, compRows[0] || {});
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="Invoice_${saleRows[0].sale_id}.docx"`);
     res.send(buffer);
@@ -241,9 +317,9 @@ router.post('/import', verifyToken, async (req, res) => {
           `INSERT INTO sales (company_id, customer_name, sale_date, total_amount, status, created_by)
            VALUES (?, ?, ?, ?, 'pending', ?)`,
           [
-            company_id, 
-            row.customer_name, 
-            row.sale_date || new Date(), 
+            company_id,
+            row.customer_name,
+            row.sale_date || new Date(),
             total,
             req.user.user_id
           ]

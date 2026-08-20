@@ -2,6 +2,9 @@ const express = require('express');
 const pool = require('../config/db');
 const { verifyToken } = require('../middleware/auth');
 const { distributeDates, recalculateAllActivePOs } = require('../utils/workflowUtils');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+const { sendEmail } = require('../utils/mailer');
 
 const router = express.Router();
 
@@ -13,23 +16,23 @@ router.get('/templates', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   try {
     const [templates] = await pool.query('SELECT * FROM workflow_templates WHERE company_id = ?', [company_id]);
-    
+
     // Get active versions
     for (let t of templates) {
-        const [versions] = await pool.query('SELECT * FROM workflow_template_versions WHERE template_id = ? ORDER BY version_number DESC', [t.id]);
-        t.versions = versions;
-        t.active_version = versions.find(v => v.is_active) || null;
+      const [versions] = await pool.query('SELECT * FROM workflow_template_versions WHERE template_id = ? ORDER BY version_number DESC', [t.id]);
+      t.versions = versions;
+      t.active_version = versions.find(v => v.is_active) || null;
     }
-    
+
     res.json({ success: true, templates });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// ----------------------------------------------------
+// -------------------------------------------------
 // CALENDARS
-// ----------------------------------------------------
+// -------------------------------------------------
 
 router.get('/calendars', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
@@ -43,27 +46,27 @@ router.get('/calendars', verifyToken, async (req, res) => {
 });
 
 router.post('/calendars/holiday', verifyToken, async (req, res) => {
-    const company_id = req.user.company_id;
-    const { holiday_date, description } = req.body;
-    try {
-        await pool.query('INSERT INTO holiday_calendars (company_id, holiday_date, description) VALUES (?, ?, ?)', [company_id, holiday_date, description]);
-        res.json({ success: true, message: 'Holiday added' });
-    } catch(err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+  const company_id = req.user.company_id;
+  const { holiday_date, description } = req.body;
+  try {
+    await pool.query('INSERT INTO holiday_calendars (company_id, holiday_date, description) VALUES (?, ?, ?)', [company_id, holiday_date, description]);
+    res.json({ success: true, message: 'Holiday added' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 router.put('/calendars/working-days', verifyToken, async (req, res) => {
-    const company_id = req.user.company_id;
-    const { days } = req.body; // Array of {day_of_week, is_working}
-    try {
-        for (let d of days) {
-            await pool.query('UPDATE working_days SET is_working = ? WHERE company_id = ? AND day_of_week = ?', [d.is_working, company_id, d.day_of_week]);
-        }
-        res.json({ success: true, message: 'Working days updated' });
-    } catch(err) {
-        res.status(500).json({ success: false, message: err.message });
+  const company_id = req.user.company_id;
+  const { days } = req.body; // Array of {day_of_week, is_working}
+  try {
+    for (let d of days) {
+      await pool.query('UPDATE working_days SET is_working = ? WHERE company_id = ? AND day_of_week = ?', [d.is_working, company_id, d.day_of_week]);
     }
+    res.json({ success: true, message: 'Working days updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ----------------------------------------------------
@@ -81,7 +84,7 @@ router.get('/stages', verifyToken, async (req, res) => {
     `, [company_id]);
 
     if (activeVersions.length === 0) {
-        return res.json({ success: true, stages: [] });
+      return res.json({ success: true, stages: [] });
     }
 
     const version_id = activeVersions[0].id;
@@ -95,10 +98,11 @@ router.get('/stages', verifyToken, async (req, res) => {
   }
 });
 
+// 
 router.post('/stages', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const { name, order_index, color, allocation_type, allocation_value } = req.body;
-  
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -111,18 +115,18 @@ router.post('/stages', verifyToken, async (req, res) => {
     `, [company_id]);
 
     if (activeVersions.length === 0) {
-        // Auto-create a default template for this company
-        const [tempRes] = await conn.query(
-            'INSERT INTO workflow_templates (company_id, name, description) VALUES (?, ?, ?)',
-            [company_id, 'Default Template', 'Automatically generated template']
-        );
-        const [verRes] = await conn.query(
-            'INSERT INTO workflow_template_versions (template_id, version_number, is_active) VALUES (?, ?, ?)',
-            [tempRes.insertId, 1, true]
-        );
-        version_id = verRes.insertId;
+      // Auto-create a default template for this company
+      const [tempRes] = await conn.query(
+        'INSERT INTO workflow_templates (company_id, name, description) VALUES (?, ?, ?)',
+        [company_id, 'Default Template', 'Automatically generated template']
+      );
+      const [verRes] = await conn.query(
+        'INSERT INTO workflow_template_versions (template_id, version_number, is_active) VALUES (?, ?, ?)',
+        [tempRes.insertId, 1, true]
+      );
+      version_id = verRes.insertId;
     } else {
-        version_id = activeVersions[0].id;
+      version_id = activeVersions[0].id;
     }
 
     // Shift subsequent stages
@@ -138,10 +142,10 @@ router.post('/stages', verifyToken, async (req, res) => {
     );
 
     await conn.commit();
-    
+
     // Background recalculation of all active POs
     recalculateAllActivePOs(pool, company_id).catch(console.error);
-    
+
     res.json({ success: true, message: 'Stage added' });
   } catch (err) {
     await conn.rollback();
@@ -154,7 +158,7 @@ router.post('/stages', verifyToken, async (req, res) => {
 router.delete('/stages/:id', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const stage_id = req.params.id;
-  
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -227,11 +231,11 @@ router.put('/stages/reorder', verifyToken, async (req, res) => {
 router.get('/po/:po_id', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const po_id = req.params.po_id;
-  
+
   try {
     const [poRows] = await pool.query('SELECT * FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
     if (poRows.length === 0) return res.status(404).json({ success: false, message: 'PO not found' });
-    
+
     const poData = poRows[0];
 
     // Fetch items
@@ -279,9 +283,9 @@ router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
           status = ?, notes = ?
       WHERE po_id = ? AND stage_id = ?
     `, [
-      scheduled_start_date || null, 
+      scheduled_start_date || null,
       scheduled_end_date || null,
-      actual_start_date || null, 
+      actual_start_date || null,
       actual_end_date || null,
       status || 'pending', notes || '',
       po_id, stage_id
@@ -299,20 +303,20 @@ router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
     if (poStages.length > 0) {
       const allCompleted = poStages.every(s => s.status === 'completed');
       const anyStarted = poStages.some(s => s.status !== 'pending');
-      
+
       let newPoStatus = 'draft';
       if (allCompleted) {
         newPoStatus = 'completed';
       } else if (anyStarted) {
         newPoStatus = 'in_progress';
       }
-      
+
       await pool.query('UPDATE purchase_orders SET status = ? WHERE id = ?', [newPoStatus, po_id]);
     }
 
     // Insert Audit log
-    await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`, 
-        [company_id, po_id, 'STATUS_UPDATE', `Stage ${stage_id} updated to ${status}`, req.user.user_id]);
+    await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`,
+      [company_id, po_id, 'STATUS_UPDATE', `Stage ${stage_id} updated to ${status}`, req.user.user_id]);
 
     res.json({ success: true, message: 'Schedule updated' });
   } catch (err) {
@@ -356,7 +360,15 @@ router.get('/po/:po_id/shipments', verifyToken, async (req, res) => {
 router.post('/po/:po_id/shipments', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const po_id = req.params.po_id;
-  const { shipped_quantity, shipment_date, notes } = req.body;
+  const {
+    shipped_quantity,
+    shipment_date,
+    delivery_date,
+    vessel_name,
+    container_no,
+    bl_no,
+    notes
+  } = req.body;
 
   const shipQty = parseInt(shipped_quantity, 10);
   if (isNaN(shipQty) || shipQty <= 0) {
@@ -378,16 +390,27 @@ router.post('/po/:po_id/shipments', verifyToken, async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot ship more than pending quantity (${pendingQty} units)` });
     }
 
-    await pool.query(
-      'INSERT INTO po_shipments (company_id, po_id, shipped_quantity, shipment_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-      [company_id, po_id, shipQty, shipment_date || null, notes || '', req.user.user_id]
+    // ✅ 'id' hataya - auto_increment hai, DB khud generate karega
+    const [result] = await pool.query(
+      `INSERT INTO po_shipments 
+       (company_id, po_id, shipped_quantity, shipment_date, delivery_date, vessel_name, container_no, bl_no, notes, created_by) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [company_id, po_id, shipQty, shipment_date || null, delivery_date || null, vessel_name || '', container_no || '', bl_no || '', notes || '', req.user.user_id]
     );
-    // Log audit
-    await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`, 
-        [company_id, po_id, 'SHIPMENT_ADDED', `Added shipment of ${shipped_quantity} units`, req.user.user_id]);
 
-    res.json({ success: true, message: 'Shipment added' });
+    // Log audit
+    await pool.query(
+      `INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`,
+      [company_id, po_id, 'SHIPMENT_ADDED', `Added shipment of ${shipQty} units`, req.user.user_id]
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Shipment added', 
+      shipment_id: result.insertId  // ✅ naya generated id frontend ko milega
+    });
   } catch (err) {
+    console.error('Error adding shipment:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -402,13 +425,36 @@ router.delete('/po/:po_id/shipments/:shipment_id', verifyToken, async (req, res)
   }
 });
 
-router.post('/po/:po_id/report/email', verifyToken, async (req, res) => {
-    // Mock email functionality
-    const { po_id } = req.params;
-    const { recipients } = req.body;
-    
-    // Here we would normally compile HTML and send via nodemailer
-    res.json({ success: true, message: `Email sent to ${recipients.join(', ')}` });
+router.post('/po/:po_id/report/email', verifyToken, upload.single('file'), async (req, res) => {
+  const company_id = req.user.company_id;
+  const { po_id } = req.params;
+  const recipients = req.body.recipients ? req.body.recipients.split(',') : [];
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'Excel file attachment is missing' });
+  }
+
+  try {
+    const [po] = await pool.query('SELECT po_number FROM purchase_orders WHERE id = ?', [po_id]);
+    const poNumber = po[0] ? po[0].po_number : po_id;
+
+    await sendEmail({
+      companyId: company_id,
+      to: recipients.join(', '),
+      subject: `Order Follow-up Chart (OFC) - PO #${poNumber}`,
+      html: `<p>Please find attached the latest Order Follow-up Chart (OFC) for PO <strong>#${poNumber}</strong>.</p>`,
+      attachments: [{
+        filename: `OFC_PO_${poNumber}.xlsx`,
+        content: req.file.buffer,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }]
+    });
+
+    res.json({ success: true, message: `OFC Excel sent successfully.` });
+  } catch (err) {
+    console.error('Email sending failed:', err);
+    res.status(500).json({ success: false, message: 'Failed to send email. Check SMTP settings in company profile.' });
+  }
 });
 
 router.get('/dashboard', verifyToken, async (req, res) => {
@@ -426,6 +472,11 @@ router.get('/dashboard', verifyToken, async (req, res) => {
       [company_id]
     );
 
+    // Pagination
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
+
     const [pos] = await pool.query(`
       SELECT 
         po.id, po.po_number, po.factory, po.po_date, po.po_delivery_date,
@@ -439,7 +490,20 @@ router.get('/dashboard', verifyToken, async (req, res) => {
         ) as current_stage_id
       FROM purchase_orders po
       WHERE po.company_id = ? AND po.status != 'completed'
-    `, [company_id]);
+      ORDER BY po.created_at DESC
+      LIMIT ? OFFSET ?
+    `, [company_id, limit, offset]);
+
+    // Get total records
+    const [[countResult]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM purchase_orders
+       WHERE company_id = ? AND status != 'completed'`,
+      [company_id]
+    );
+
+    const total = Number(countResult.total);
+    const totalPages = Math.ceil(total / limit);
 
     const dashboard = stages.map(stg => ({
       ...stg,
@@ -458,7 +522,16 @@ router.get('/dashboard', verifyToken, async (req, res) => {
       }
     });
 
-    res.json({ success: true, dashboard });
+    res.json({
+      success: true,
+      dashboard,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

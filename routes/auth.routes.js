@@ -35,6 +35,7 @@ router.post('/login', async (req, res) => {
     const payload = {
       user_id: user.user_id,
       username: user.username,
+      email: user.email,
       role: user.role,
       company_id: user.company_id,
     };
@@ -56,6 +57,7 @@ router.post('/login', async (req, res) => {
       user: {
         user_id: user.user_id,
         username: user.username,
+        email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
         role: user.role,

@@ -9,9 +9,9 @@ async function fix() {
             password: '',
             database: 'uaconsu1_f2cerp'
         });
-        
+
         const [pos] = await pool.query('SELECT * FROM purchase_orders WHERE po_delivery_date > "2000-01-01"');
-        
+
         for (const po of pos) {
             await pool.query('DELETE FROM po_workflow_schedules WHERE po_id = ?', [po.id]);
             console.log(`Fixing PO ${po.po_number}...`);
@@ -27,10 +27,10 @@ async function fix() {
                 console.log(`Generated OFC for PO ${po.po_number}`);
             }
         }
-        
+
         console.log('Done!');
         process.exit(0);
-    } catch(err) {
+    } catch (err) {
         console.error(err.message);
         process.exit(1);
     }

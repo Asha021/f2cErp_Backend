@@ -75,7 +75,7 @@ router.post('/', verifyToken, requireSuperAdmin, async (req, res) => {
       action: 'add_company',
       description: `Company "${company_name}" added`,
     });
-    
+
     res.json({ success: true, message: 'Company added successfully!' });
   } catch (err) {
     res.status(400).json({ success: false, message: 'Error adding company: ' + err.message });
