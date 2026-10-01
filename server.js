@@ -68,4 +68,10 @@ const { initCronJobs } = require('./cron/followUpJobs');
 initCronJobs();
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`ERP API listening on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`ERP API listening on port ${PORT}`);
+  require('child_process').exec('node fix_live_db.js', (err, stdout, stderr) => {
+    if (err) console.error("Auto DB fix error:", err.message);
+    if (stdout) console.log("Auto DB fix:", stdout);
+  });
+});
