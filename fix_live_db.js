@@ -22,10 +22,14 @@ async function checkAndAddColumn(table, column, definition) {
   await checkAndAddColumn('purchase_orders', 'revision_no', 'INT DEFAULT 0');
 
   // po_items table updates
+  await checkAndAddColumn('po_items', 'currency', 'VARCHAR(10) DEFAULT "USD"');
   await checkAndAddColumn('po_items', 'size', 'VARCHAR(255) DEFAULT NULL');
   await checkAndAddColumn('po_items', 'eft', 'VARCHAR(255) DEFAULT NULL');
   await checkAndAddColumn('po_items', 'finish', 'VARCHAR(255) DEFAULT NULL');
   await checkAndAddColumn('po_items', 'special_comments', 'TEXT DEFAULT NULL');
+  await checkAndAddColumn('po_items', 'inspection_status', 'VARCHAR(50) DEFAULT "pending"');
+  await checkAndAddColumn('po_items', 'ppt_source_url', 'VARCHAR(1000) DEFAULT NULL');
+  await checkAndAddColumn('po_items', 'ppt_backup_path', 'VARCHAR(1000) DEFAULT NULL');
   
   await checkAndAddColumn('po_items', 'length', 'DECIMAL(10,2) DEFAULT NULL');
   await checkAndAddColumn('po_items', 'width', 'DECIMAL(10,2) DEFAULT NULL');
