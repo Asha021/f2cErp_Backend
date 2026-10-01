@@ -164,7 +164,8 @@ router.delete('/:id', verifyToken, async (req, res) => {
 });
 const multer = require('multer');
 const xlsx = require('xlsx');
-const upload = multer({ dest: 'uploads/' });
+const os = require('os');
+const upload = multer({ dest: os.tmpdir() });
 const PDFDocument = require('pdfkit');
 
 // GET /api/sales/:id/invoice

@@ -1337,7 +1337,8 @@ const storage = new CloudinaryStorage({
 });
 
 const upload = multer({ storage: storage });
-const excelUpload = multer({ dest: 'uploads/' });
+const os = require('os');
+const excelUpload = multer({ dest: os.tmpdir() });
 
 // POST /api/purchase-orders/upload-image
 // router.post('/upload-image', verifyToken, upload.single('image'), (req, res) => {
