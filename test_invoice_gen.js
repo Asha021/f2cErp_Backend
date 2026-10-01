@@ -19,6 +19,7 @@ async function test() {
        WHERE si.sale_id = ?`,
       [sale.sale_id]
     );
+
     console.log("Items count:", items.length);
 
     console.log("Fetching company...");
@@ -30,6 +31,7 @@ async function test() {
     const buffer = await generateInvoiceDocx(sale, items, company);
     console.log("Generated successfully! Buffer size:", buffer.length);
     process.exit(0);
+    
   } catch (err) {
     console.error("GENERATION ERROR:", err);
     process.exit(1);

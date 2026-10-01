@@ -13,6 +13,7 @@ const router = express.Router();
 // ----------------------------------------------------
 
 router.get('/templates', verifyToken, async (req, res) => {
+
   const company_id = req.user.company_id;
   try {
     const [templates] = await pool.query('SELECT * FROM workflow_templates WHERE company_id = ?', [company_id]);
@@ -267,60 +268,298 @@ router.get('/po/:po_id', verifyToken, async (req, res) => {
   }
 });
 
-router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
+// router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
+//   const company_id = req.user.company_id;
+//   const { po_id, stage_id } = req.params;
+//   const { scheduled_start_date, scheduled_end_date, actual_start_date, actual_end_date, status, notes } = req.body;
+
+//   try {
+//     const [poCheck] = await pool.query('SELECT id FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
+//     if (poCheck.length === 0) return res.status(404).json({ success: false, message: 'PO not found' });
+
+//     await pool.query(`
+//       UPDATE po_workflow_schedules 
+//       SET scheduled_start_date = ?, scheduled_end_date = ?, 
+//           actual_start_date = ?, actual_end_date = ?, 
+//           status = ?, notes = ?
+//       WHERE po_id = ? AND stage_id = ?
+//     `, [
+//       scheduled_start_date || null,
+//       scheduled_end_date || null,
+//       actual_start_date || null,
+//       actual_end_date || null,
+//       status || 'pending', notes || '',
+//       po_id, stage_id
+//     ]);
+
+
+
+//     // Automatically transition overall PO status based on stage statuses
+//     const [poStages] = await pool.query(`
+//       SELECT ps.stage_id, ps.status, stg.order_index
+//       FROM po_workflow_schedules ps
+//       JOIN production_stages stg ON ps.stage_id = stg.id
+//       WHERE ps.po_id = ?
+//       ORDER BY stg.order_index ASC
+//     `, [po_id]);
+
+//     if (poStages.length > 0) {
+//       const allCompleted = poStages.every(s => s.status === 'completed');
+//       const anyStarted = poStages.some(s => s.status !== 'pending');
+
+//       let newPoStatus = 'draft';
+//       if (allCompleted) {
+//         newPoStatus = 'completed';
+//       } else if (anyStarted) {
+//         newPoStatus = 'in_progress';
+//       }
+
+//       await pool.query('UPDATE purchase_orders SET status = ? WHERE id = ?', [newPoStatus, po_id]);
+//     }
+
+//     // Insert Audit log
+//     await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`,
+//       [company_id, po_id, 'STATUS_UPDATE', `Stage ${stage_id} updated to ${status}`, req.user.user_id]);
+
+//     res.json({ success: true, message: 'Schedule updated' });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// });
+
+
+// router.put('/po/:po_id/stage/:stage_id', verifyToken, async (req, res) => {
+//   const company_id = req.user.company_id;
+//   const { po_id, stage_id } = req.params;
+//   const { scheduled_start_date, scheduled_end_date, actual_start_date, actual_end_date, status, notes } = req.body;
+
+//   try {
+//     const [poCheck] = await pool.query('SELECT id FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
+//     if (poCheck.length === 0) return res.status(404).json({ success: false, message: 'PO not found' });
+
+//     await pool.query(`
+//       UPDATE po_workflow_schedules 
+//       SET scheduled_start_date = ?, scheduled_end_date = ?, 
+//           actual_start_date = ?, actual_end_date = ?, 
+//           status = ?, notes = ?
+//       WHERE po_id = ? AND stage_id = ?
+//     `, [
+//       scheduled_start_date || null,
+//       scheduled_end_date || null,
+//       actual_start_date || null,
+//       actual_end_date || null,
+//       status || 'pending', notes || '',
+//       po_id, stage_id
+//     ]);
+
+//     // ... (PO status auto-transition wala block waise hi rehne do) ...
+
+//     // ✅ NAYA: stage ka naam nikaalo
+//     const [stageInfo] = await pool.query(
+//       'SELECT stage_name FROM production_stages WHERE id = ?',
+//       [stage_id]
+//     );
+
+//     const stageName = stageInfo[0]?.stage_name || `Stage ${stage_id}`;
+
+//     // Insert Audit log — ab naam use hoga, ID nahi
+//     await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`,
+//       [company_id, po_id, 'STATUS_UPDATE', `${stageName} updated to ${status}`, req.user.user_id]);
+
+//     res.json({ success: true, message: 'Schedule updated' });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// });
+
+
+// 
+
+
+// router.put('/po/:poId/stage/:stageId', verifyToken, async (req, res) => {
+//   const { poId, stageId } = req.params;
+//   const user_id = req.user.id;
+//   const user_name = req.user.name || req.user.username;
+//   const {
+//     scheduled_start_date,
+//     scheduled_end_date,
+//     actual_start_date,
+//     actual_end_date,
+//     status,
+//     notes,
+//   } = req.body;
+
+//   try {
+//     // 1. Pehle current (purani) values fetch karo — taaki compare kar sake kya badla
+//     const [existingRows] = await pool.query(
+//       `SELECT ps.*, ss.stage_name
+//        FROM po_stage_progress ps
+//        JOIN shipment_stages ss ON ss.id = ps.stage_id
+//        WHERE ps.po_id = ? AND ps.stage_id = ?`,
+//       [poId, stageId]
+//     );
+
+//     if (!existingRows[0]) {
+//       return res.status(404).json({ success: false, message: 'Stage not found for this PO.' });
+//     }
+
+//     const oldData = existingRows[0];
+//     const stageName = oldData.stage_name;
+
+//     // 2. Update karo naye values ke sath
+//     await pool.query(
+//       `UPDATE po_stage_progress
+//        SET scheduled_start_date = ?, scheduled_end_date = ?,
+//            actual_start_date = ?, actual_end_date = ?,
+//            status = ?, notes = ?
+//        WHERE po_id = ? AND stage_id = ?`,
+//       [scheduled_start_date, scheduled_end_date, actual_start_date, actual_end_date, status, notes, poId, stageId]
+//     );
+
+//     // 3. Compare karo kya-kya fields change hui, aur audit log banao
+//     const changes = [];
+
+//     const compareField = (label, oldVal, newVal) => {
+//       const oldFormatted = oldVal ? String(oldVal).substring(0, 10) : null;
+//       const newFormatted = newVal ? String(newVal).substring(0, 10) : null;
+//       if (oldFormatted !== newFormatted) {
+//         changes.push(`${label} changed from "${oldFormatted || '—'}" to "${newFormatted || '—'}"`);
+//       }
+//     };
+
+//     compareField('Scheduled Start Date', oldData.scheduled_start_date, scheduled_start_date);
+//     compareField('Scheduled End Date', oldData.scheduled_end_date, scheduled_end_date);
+//     compareField('Actual Start Date', oldData.actual_start_date, actual_start_date);
+//     compareField('Actual End Date', oldData.actual_end_date, actual_end_date);
+
+//     if (oldData.status !== status) {
+//       changes.push(`Status changed from "${oldData.status}" to "${status}"`);
+//     }
+//     if ((oldData.notes || '') !== (notes || '')) {
+//       changes.push(`Notes updated`);
+//     }
+
+//     // 4. Agar kuch bhi change hua, to ek audit log entry banao
+//     if (changes.length > 0) {
+//       const description = `${stageName}: ${changes.join(', ')}`;
+
+//       await pool.query(
+//         `INSERT INTO po_audit_logs (po_id, user_id, user_name, description, created_at)
+//          VALUES (?, ?, ?, ?, NOW())`,
+//         [poId, user_id, user_name, description]
+//       );
+//     }
+
+//     res.json({ success: true, message: 'Stage updated successfully.' });
+//   } catch (error) {
+//     console.error('Error updating stage:', error.message);
+//     res.status(500).json({ success: false, message: 'Failed to update stage.' });
+//   }
+// });
+
+router.put('/po/:poId/stage/:stageId', verifyToken, async (req, res) => {
+  const { poId, stageId } = req.params;
   const company_id = req.user.company_id;
-  const { po_id, stage_id } = req.params;
-  const { scheduled_start_date, scheduled_end_date, actual_start_date, actual_end_date, status, notes } = req.body;
+  const user_id = req.user.user_id;
+  const {
+    scheduled_start_date,
+    scheduled_end_date,
+    actual_start_date,
+    actual_end_date,
+    status,
+    notes,
+  } = req.body;
 
   try {
-    const [poCheck] = await pool.query('SELECT id FROM purchase_orders WHERE id = ? AND company_id = ?', [po_id, company_id]);
-    if (poCheck.length === 0) return res.status(404).json({ success: false, message: 'PO not found' });
+    const [existingRows] = await pool.query(
+      `SELECT ps.*, ss.stage_name
+       FROM po_workflow_schedules ps
+       JOIN production_stages ss ON ss.id = ps.stage_id
+       WHERE ps.po_id = ? AND ps.stage_id = ?`,
+      [poId, stageId]
+    );
 
-    await pool.query(`
-      UPDATE po_workflow_schedules 
-      SET scheduled_start_date = ?, scheduled_end_date = ?, 
-          actual_start_date = ?, actual_end_date = ?, 
-          status = ?, notes = ?
-      WHERE po_id = ? AND stage_id = ?
-    `, [
-      scheduled_start_date || null,
-      scheduled_end_date || null,
-      actual_start_date || null,
-      actual_end_date || null,
-      status || 'pending', notes || '',
-      po_id, stage_id
-    ]);
-
-    // Automatically transition overall PO status based on stage statuses
-    const [poStages] = await pool.query(`
-      SELECT ps.stage_id, ps.status, stg.order_index
-      FROM po_workflow_schedules ps
-      JOIN production_stages stg ON ps.stage_id = stg.id
-      WHERE ps.po_id = ?
-      ORDER BY stg.order_index ASC
-    `, [po_id]);
-
-    if (poStages.length > 0) {
-      const allCompleted = poStages.every(s => s.status === 'completed');
-      const anyStarted = poStages.some(s => s.status !== 'pending');
-
-      let newPoStatus = 'draft';
-      if (allCompleted) {
-        newPoStatus = 'completed';
-      } else if (anyStarted) {
-        newPoStatus = 'in_progress';
-      }
-
-      await pool.query('UPDATE purchase_orders SET status = ? WHERE id = ?', [newPoStatus, po_id]);
+    if (!existingRows[0]) {
+      return res.status(404).json({ success: false, message: 'Stage not found for this PO.' });
     }
 
-    // Insert Audit log
-    await pool.query(`INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by) VALUES (?, ?, ?, ?, ?)`,
-      [company_id, po_id, 'STATUS_UPDATE', `Stage ${stage_id} updated to ${status}`, req.user.user_id]);
+    const oldData = existingRows[0];
+    const stageName = oldData.stage_name;
+    let newRevisionCount = oldData.revision_count || 0;
 
-    res.json({ success: true, message: 'Schedule updated' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // Check if scheduled dates changed
+    const scheduledStartChanged = (oldData.scheduled_start_date ? String(oldData.scheduled_start_date).substring(0, 10) : null) !== (scheduled_start_date ? String(scheduled_start_date).substring(0, 10) : null);
+    const scheduledEndChanged = (oldData.scheduled_end_date ? String(oldData.scheduled_end_date).substring(0, 10) : null) !== (scheduled_end_date ? String(scheduled_end_date).substring(0, 10) : null);
+
+    if (scheduledStartChanged || scheduledEndChanged) {
+      if (newRevisionCount >= 3 && req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Revision limit reached. Only an admin can change scheduled dates now.' });
+      }
+      newRevisionCount++;
+    }
+
+    // Update the stage
+    await pool.query(
+      `UPDATE po_workflow_schedules
+       SET scheduled_start_date = ?, scheduled_end_date = ?,
+           actual_start_date = ?, actual_end_date = ?,
+           status = ?, notes = ?, revision_count = ?
+       WHERE po_id = ? AND stage_id = ?`,
+      [
+        scheduled_start_date || null,
+        scheduled_end_date || null,
+        actual_start_date || null,
+        actual_end_date || null,
+        status || 'pending',
+        notes || '',
+        newRevisionCount,
+        poId,
+        stageId
+      ]
+    );
+
+    // Helper to log changes to workflow_audit_logs
+    const logFieldChange = async (fieldLabel, oldVal, newVal) => {
+      const oldFormatted = oldVal ? String(oldVal).substring(0, 10) : null;
+      const newFormatted = newVal ? String(newVal).substring(0, 10) : null;
+
+      if (oldFormatted === newFormatted) return;
+
+      let description = `${stageName}: ${fieldLabel} updated from "${oldFormatted || '—'}" to "${newFormatted || '—'}"`;
+
+      if (fieldLabel.includes('Scheduled') && newRevisionCount > 0) {
+        // e.g. "revision 1, date 16-05-2026"
+        const [yyyy, mm, dd] = newFormatted ? newFormatted.split('-') : ['', '', ''];
+        const displayDate = dd && mm && yyyy ? `${dd}-${mm}-${yyyy}` : newFormatted;
+        description = `${stageName}: ${fieldLabel} updated. revision ${newRevisionCount}, date ${displayDate}`;
+      }
+
+      await pool.query(
+        `INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by)
+         VALUES (?, ?, ?, ?, ?)`,
+        [company_id, poId, 'STATUS_UPDATE', description, user_id]
+      );
+    };
+
+    // Check each date field
+    await logFieldChange('Scheduled Start Date', oldData.scheduled_start_date, scheduled_start_date);
+    await logFieldChange('Scheduled End Date', oldData.scheduled_end_date, scheduled_end_date);
+    await logFieldChange('Actual Start Date', oldData.actual_start_date, actual_start_date);
+    await logFieldChange('Actual End Date', oldData.actual_end_date, actual_end_date);
+
+    // Log status changes
+    if (oldData.status !== status) {
+      await pool.query(
+        `INSERT INTO workflow_audit_logs (company_id, po_id, action, description, changed_by)
+         VALUES (?, ?, ?, ?, ?)`,
+        [company_id, poId, 'STATUS_UPDATE', `${stageName} status changed to "${status}"`, user_id]
+      );
+    }
+
+    res.json({ success: true, message: 'Stage updated successfully.' });
+  } catch (error) {
+    console.error('Error updating stage:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update stage.' });
   }
 });
 
@@ -404,9 +643,9 @@ router.post('/po/:po_id/shipments', verifyToken, async (req, res) => {
       [company_id, po_id, 'SHIPMENT_ADDED', `Added shipment of ${shipQty} units`, req.user.user_id]
     );
 
-    res.json({ 
-      success: true, 
-      message: 'Shipment added', 
+    res.json({
+      success: true,
+      message: 'Shipment added',
       shipment_id: result.insertId  // ✅ naya generated id frontend ko milega
     });
   } catch (err) {
@@ -511,6 +750,15 @@ router.get('/dashboard', verifyToken, async (req, res) => {
       pos: []
     }));
 
+    const unassignedStage = {
+      id: 'unassigned',
+      name: 'Unassigned / No Stage',
+      order_index: 999,
+      color: '#94a3b8',
+      po_count: 0,
+      pos: []
+    };
+
     pos.forEach(po => {
       let stageIndex = -1;
       if (po.current_stage_id) {
@@ -519,8 +767,16 @@ router.get('/dashboard', verifyToken, async (req, res) => {
       if (stageIndex >= 0) {
         dashboard[stageIndex].po_count++;
         dashboard[stageIndex].pos.push(po);
+      } else {
+        // Fallback for POs with no active stage
+        unassignedStage.po_count++;
+        unassignedStage.pos.push(po);
       }
     });
+
+    if (unassignedStage.po_count > 0) {
+      dashboard.push(unassignedStage);
+    }
 
     res.json({
       success: true,

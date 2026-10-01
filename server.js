@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 
 const uploadDirs = ['uploads', 'uploads/items', 'uploads/templates', 'uploads/invoices', 'uploads/pos', 'uploads/reports'];
 uploadDirs.forEach(dir => {
@@ -18,6 +19,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const purchaseOrdersRoutes = require('./routes/purchaseOrders.routes');
 const salesRoutes = require('./routes/sales.routes');
 const workflowRoutes = require('./routes/workflow.routes');
+const auditRoutes = require('./routes/audit.routes');
 
 const app = express();
 
@@ -37,7 +39,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/api/health', (req, res) => res.json({ success: true, message: 'ERP API running' }));
 
 
@@ -50,6 +52,7 @@ app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/reports', require('./routes/reports.routes'));
 app.use('/api/workflow', workflowRoutes);
+app.use('/api/audit', auditRoutes);
 
 // 404
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));

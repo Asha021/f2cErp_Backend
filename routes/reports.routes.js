@@ -9,17 +9,23 @@ router.get('/balance', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   try {
     const [orders] = await pool.query(
-      `SELECT po.id, po.po_number, po.po_date, po.factory, po.status,
-              SUM(pi.quantity * pi.price) AS total_amount
+      `SELECT po.id, po.po_number, po.po_date, po.factory, po.status, po.updated_at AS last_update,
+              (SELECT GROUP_CONCAT(description SEPARATOR ', ') FROM po_items WHERE po_id = po.id) as items,
+              (SELECT COALESCE(SUM(quantity), 0) FROM po_items WHERE po_id = po.id) AS po_quantity,
+              (SELECT COALESCE(SUM(shipped_quantity), 0) FROM po_shipments WHERE po_id = po.id) AS ready_quantity,
+              (SELECT COUNT(id) FROM po_shipments WHERE po_id = po.id) AS shipment_count
        FROM purchase_orders po
-       LEFT JOIN po_items pi ON po.id = pi.po_id
        WHERE po.company_id = ?
-       GROUP BY po.id
        ORDER BY po.created_at DESC`,
       [company_id]
     );
 
-    res.json({ success: true, orders });
+    const mappedOrders = orders.map(po => ({
+      ...po,
+      balance: Number(po.po_quantity) - Number(po.ready_quantity)
+    }));
+
+    res.json({ success: true, orders: mappedOrders });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Error fetching balance report: ' + err.message });
   }

@@ -38,18 +38,23 @@ async function generatePOXlsx(poData, poItems, companyData) {
   sheet.getColumn('G').width = 15;
   sheet.getColumn('H').width = 20;
 
+  // Set default font for all columns
+  sheet.columns.forEach(column => {
+    column.font = { name: 'Aptos', size: 11 };
+  });
+
   let currentRow = 1;
 
   // Title
   sheet.getCell(`A${currentRow}`).value = 'PURCHASE ORDER';
   sheet.mergeCells(`A${currentRow}:H${currentRow}`);
-  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 16 };
+  sheet.getCell(`A${currentRow}`).font = { name: 'Aptos', bold: true, size: 16 };
   sheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
   currentRow += 2;
 
   // PO Details Section
   sheet.getCell(`A${currentRow}`).value = 'PO Details';
-  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+  sheet.getCell(`A${currentRow}`).font = { name: 'Aptos', bold: true, size: 14 };
   sheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
   sheet.mergeCells(`A${currentRow}:H${currentRow}`);
   currentRow++;
@@ -70,7 +75,7 @@ async function generatePOXlsx(poData, poItems, companyData) {
   poDetails.forEach(detail => {
     sheet.getCell(`A${currentRow}`).value = detail.label;
     sheet.getCell(`B${currentRow}`).value = detail.value;
-    sheet.getCell(`A${currentRow}`).font = { bold: true };
+    sheet.getCell(`A${currentRow}`).font = { name: 'Aptos', bold: true };
     
     if (['Buyer Address', 'Factory Address', 'Special Comments'].includes(detail.label)) {
       sheet.getCell(`B${currentRow}`).alignment = { wrapText: true, vertical: 'top' };
@@ -83,19 +88,26 @@ async function generatePOXlsx(poData, poItems, companyData) {
 
   // Items Section
   sheet.getCell(`A${currentRow}`).value = 'Items';
-  sheet.getCell(`A${currentRow}`).font = { bold: true, size: 14 };
+  sheet.getCell(`A${currentRow}`).font = { name: 'Aptos', bold: true, size: 14 };
   sheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
   sheet.mergeCells(`A${currentRow}:H${currentRow}`);
   currentRow++;
 
   // Items Header
-  const headers = ['Item No', 'Serial Number', 'Description', 'Quantity', 'Price', 'Subtotal', 'Image'];
+  let totalCurr = 'USD';
+  if (poItems && poItems.length > 0) {
+      const c = poItems[0].currency;
+      if (c === '$' || c === 'USD') totalCurr = 'USD';
+      else if (c === 'rs' || c === '₹' || c === 'INR') totalCurr = 'INR';
+      else if (c) totalCurr = c;
+  }
+  const headers = ['Item No', 'Serial Number', 'Description', 'Quantity', `Price (${totalCurr})`, `Subtotal (${totalCurr})`, 'Image'];
   const headerCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
   headers.forEach((header, index) => {
     const cell = sheet.getCell(`${headerCols[index]}${currentRow}`);
     cell.value = header;
-    cell.font = { bold: true };
+    cell.font = { name: 'Aptos', bold: true };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6E6E6' } };
     cell.border = {
       top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
@@ -120,8 +132,8 @@ async function generatePOXlsx(poData, poItems, companyData) {
       sheet.getCell(`G${itemRow}`).value = item.item_picture ? 'Image URL' : 'No Image';
 
       // Formatting
-      sheet.getCell(`E${itemRow}`).numFmt = '"$"#,##0.00';
-      sheet.getCell(`F${itemRow}`).numFmt = '"$"#,##0.00';
+      sheet.getCell(`E${itemRow}`).numFmt = `#,##0.00`;
+      sheet.getCell(`F${itemRow}`).numFmt = `#,##0.00`;
       sheet.getCell(`C${itemRow}`).alignment = { wrapText: true, vertical: 'top' };
       
       headerCols.forEach(col => {
@@ -141,13 +153,14 @@ async function generatePOXlsx(poData, poItems, companyData) {
 
   // Total Row
   currentRow++;
+  // We don't have a single currency for grand total if mixed, but we'll use the first item's currency or USD
   sheet.getCell(`E${currentRow}`).value = 'Total:';
   sheet.getCell(`F${currentRow}`).value = grandTotal;
-  sheet.getCell(`F${currentRow}`).numFmt = '"$"#,##0.00';
+  sheet.getCell(`F${currentRow}`).numFmt = `#,##0.00`;
   
   ['E', 'F'].forEach(col => {
     const cell = sheet.getCell(`${col}${currentRow}`);
-    cell.font = { bold: true };
+    cell.font = { name: 'Aptos', bold: true };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD700' } };
     cell.border = {
       top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }

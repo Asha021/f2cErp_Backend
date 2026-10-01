@@ -24,10 +24,21 @@ function fetchImageBuffer(url) {
 // which can roll back a day in local timezones. This splits directly.
 function formatDate(val) {
     if (!val) return '';
-    const str = String(val).substring(0, 10); // take 'YYYY-MM-DD' part only
+    const str = String(val).substring(0, 10);
     const parts = str.split('-');
     if (parts.length !== 3) return str;
     return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+}
+
+function formatAlphanumericDate(val) {
+    if (!val) return '';
+    const dateObj = new Date(val);
+    if (isNaN(dateObj)) return val;
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[dateObj.getMonth()];
+    const year = String(dateObj.getFullYear()).slice(-2);
+    return `${day}-${month}-${year}`;
 }
 
 async function generatePODocxFromTemplate(poData, poItems, companyData) {
@@ -128,7 +139,7 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
     // (Duplicate Dear Sir removal removed)
 
     // ── Fix Top Spacing & T&C Gap ─────────────────────────────────────────────
-    
+
     const tblEnd = xml.lastIndexOf('</w:tbl>');
     if (tblEnd !== -1) {
         let beforeTableEnd = xml.slice(0, tblEnd);
@@ -192,6 +203,63 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
 
         xml = beforeTableEnd + afterTable;
     }
+
+    // Replace PRICE header to include currency below it
+    let mainCurrency = 'USD';
+    if (poItems && poItems.length > 0) {
+        const c = poItems[0].currency;
+        if (c === '$' || c === 'USD') mainCurrency = 'USD';
+        else if (c === 'rs' || c === '₹' || c === 'INR') mainCurrency = 'INR';
+        else if (c) mainCurrency = c;
+    }
+
+    xml = xml.replace(/<w:t>PRICE<\/w:t>/g, `<w:t>PRICE</w:t><w:br/><w:t>(${mainCurrency})</w:t>`);
+
+    // Fix the gridSpan for the "You are requested..." row so it spans all 9 columns
+    xml = xml.replace(/(<w:tc>)([\s\S]*?)(<\/w:tc>)/g, (match, open, inner, close) => {
+        if (inner.includes('You are requested to go thru')) {
+            if (inner.includes('<w:gridSpan')) {
+                inner = inner.replace(/<w:gridSpan w:val="\d+"\/>/g, '<w:gridSpan w:val="9"/>');
+            } else {
+                inner = inner.replace(/<w:tcPr>/, '<w:tcPr><w:gridSpan w:val="9"/>');
+            }
+            return open + inner + close;
+        }
+        return match;
+    });
+
+    // Inject {revision_no} value into the "REVISION NO." cell in the page header (header2.xml)
+    const header2Key = 'word/header2.xml';
+    if (zip.file(header2Key)) {
+        let h2xml = zip.file(header2Key).asText();
+        // Add the revision value inline and the updated_at date below it
+        const targetTag = '<w:t>REVISION NO.</w:t>';
+        let targetIndex = h2xml.indexOf(targetTag);
+        if (targetIndex !== -1) {
+            let pPrIndex = h2xml.lastIndexOf('<w:pPr>', targetIndex);
+
+            const replacementText = '<w:t></w:t></w:r><w:r><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/><w:b/><w:bCs/></w:rPr><w:t>REVISION NO. {revision_no}</w:t><w:br/></w:r><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t>{updated_at}</w:t></w:r><w:r><w:t></w:t>';
+
+            if (pPrIndex !== -1) {
+                h2xml = h2xml.substring(0, pPrIndex + 7) + '<w:jc w:val="center"/>' + h2xml.substring(pPrIndex + 7, targetIndex) + replacementText + h2xml.substring(targetIndex + targetTag.length);
+            } else {
+                // Fallback
+                h2xml = h2xml.replace(
+                    /<w:t>REVISION NO\.<\/w:t>/,
+                    replacementText
+                );
+            }
+        }
+
+        // Also replace "Buying Agent: -" with "Buying House: -" in header2.xml
+        h2xml = h2xml.replace(/<w:t[^>]*>Buying Agent: -.*?<\/w:t>/g, '<w:t>Buying House: -   </w:t>');
+        h2xml = h2xml.replace(/>Buying Agent: -/g, '>Buying House: -');
+
+        zip.file(header2Key, h2xml);
+    }
+
+    // Also replace in the terms and conditions if present
+    xml = xml.replace(/Buying Agent/g, 'Buying House');
 
     zip.file('word/document.xml', xml);
     // Replace ${...} with {...} in all XMLs
@@ -272,31 +340,43 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         nullGetter() { return ''; }
     });
 
+    // Helper to convert to first letter caps (leaves the rest of the string unchanged)
+    const toFirstLetterCaps = (str) => {
+        if (typeof str !== 'string' || !str.trim()) return str || '';
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    };
+
     // ── Build template data object ─────────────────────────────────────────
     const data = {
         po_number: poData.po_number || '',
         po_date: formatDate(poData.po_date),
-        buyer: poData.buyer || '',
-        buyer_address: poData.buyer_address || '',
-        factory: poData.factory || '',
-        factory_email: poData.factory_email || '',
-        factory_address: poData.factory_address || '',
+        buyer: toFirstLetterCaps(poData.buyer),
+        buyer_address: toFirstLetterCaps(poData.buyer_address),
+        factory: toFirstLetterCaps(poData.factory),
+        factory_email: (poData.factory_email || '').toLowerCase(),
+        factory_address: toFirstLetterCaps(poData.factory_address),
         // Both key variants — template may use {delivery_date} OR {po_delivery_date}
         delivery_date: formatDate(poData.po_delivery_date),
         po_delivery_date: formatDate(poData.po_delivery_date),
-        special_comments: poData.special_comments || ''
+        special_comments: toFirstLetterCaps(poData.special_comments),
+        revision_no: poData.revision_no != null ? String(poData.revision_no) : '0',
+        updated_at: formatAlphanumericDate(poData.updatedAt || poData.createdAt || new Date()),
     };
 
     if (poItems && poItems.length > 0) {
         poItems.forEach((item, index) => {
             const i = index + 1;
             data[`item_no_${i}`] = item.item_no || '';
-            data[`serial_number_${i}`] = item.serial_number || '';
-            data[`description_${i}`] = item.description || item.item_name || '';
+            data[`serial_number_${i}`] = item.serial_number || i;
+            data[`description_${i}`] = toFirstLetterCaps(item.description || item.item_name);
+            data[`size_${i}`] = toFirstLetterCaps(item.size || '');
+            data[`finish_${i}`] = toFirstLetterCaps(item.finish || '');
+            data[`special_comments_${i}`] = toFirstLetterCaps(item.special_comments || '');
             data[`quantity_${i}`] = item.quantity || '';
-            data[`price_${i}`] = item.price ? Number(item.price).toFixed(2) : '';
+            const curr = item.currency || 'USD';
+            data[`price_${i}`] = item.price ? `${Number(item.price).toFixed(2)}` : '';
             data[`subtotal_${i}`] = (item.quantity && item.price)
-                ? (Number(item.quantity) * Number(item.price)).toFixed(2)
+                ? `${(Number(item.quantity) * Number(item.price)).toFixed(2)}`
                 : '';
 
             // Set cache key as the value — getImage() will resolve it from imageCache
@@ -309,6 +389,8 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         data['item_no_1'] = '';
         data['serial_number_1'] = '';
         data['description_1'] = 'No items';
+        data['size_1'] = '';
+        data['finish_1'] = '';
         data['quantity_1'] = '';
         data['price_1'] = '';
         data['subtotal_1'] = '';
