@@ -38,7 +38,7 @@ function formatAlphanumericDate(val) {
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const month = monthNames[dateObj.getMonth()];
     const year = String(dateObj.getFullYear()).slice(-2);
-    return `${day}-${month}-${year}`;
+    return `${day}\u2011${month}\u2011${year}`;
 }
 
 async function generatePODocxFromTemplate(poData, poItems, companyData) {
@@ -238,7 +238,7 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         if (targetIndex !== -1) {
             let pPrIndex = h2xml.lastIndexOf('<w:pPr>', targetIndex);
 
-            const replacementText = '<w:t></w:t></w:r><w:r><w:rPr><w:sz w:val="14"/><w:szCs w:val="14"/><w:b/><w:bCs/></w:rPr><w:t>Revision Nbr: {revision_no}</w:t><w:br/></w:r><w:r><w:rPr><w:sz w:val="14"/><w:szCs w:val="14"/><w:b/><w:bCs/></w:rPr><w:t>Revision Dtd: {updated_at}</w:t></w:r><w:r><w:t></w:t>';
+            const replacementText = '<w:t></w:t></w:r><w:r><w:rPr><w:sz w:val="12"/><w:szCs w:val="12"/><w:b/><w:bCs/></w:rPr><w:t>Revision Nbr: {revision_no}</w:t><w:br/></w:r><w:r><w:rPr><w:sz w:val="12"/><w:szCs w:val="12"/><w:b/><w:bCs/></w:rPr><w:t>Revision Dtd: {updated_at}</w:t></w:r><w:r><w:t></w:t>';
 
             if (pPrIndex !== -1) {
                 h2xml = h2xml.substring(0, pPrIndex + 7) + '<w:jc w:val="center"/>' + h2xml.substring(pPrIndex + 7, targetIndex) + replacementText + h2xml.substring(targetIndex + targetTag.length);
