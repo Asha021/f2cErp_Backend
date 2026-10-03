@@ -30,27 +30,33 @@ router.get('/superadmin', verifyToken, requireSuperAdmin, async (req, res) => {
 
 // GET /api/dashboard/user -> dashboard.php stats (basic real counts instead of hardcoded placeholders)
 router.get('/user', verifyToken, async (req, res) => {
-  const company_id = req.user.company_id;
+  try {
+    const company_id = req.user.company_id;
 
-  const [[itemsCount]] = await pool.query('SELECT COUNT(*) as count FROM items WHERE company_id = ?', [company_id]);
-  const [[poCount]] = await pool.query('SELECT COUNT(*) as count FROM purchase_orders WHERE company_id = ?', [company_id]);
-  const [[salesCount]] = await pool.query('SELECT COUNT(*) as count FROM sales WHERE company_id = ?', [company_id]);
-  const [[companyRows]] = await pool.query('SELECT company_name FROM companies WHERE company_id = ?', [company_id]);
-  const [[pendingPoCount]] = await pool.query(
-    "SELECT COUNT(*) as count FROM purchase_orders WHERE company_id = ? AND status IN ('draft','sent')",
-    [company_id]
-  );
+    const [[itemsCount]] = await pool.query('SELECT COUNT(*) as count FROM items WHERE company_id = ?', [company_id]);
+    const [[poCount]] = await pool.query('SELECT COUNT(*) as count FROM purchase_orders WHERE company_id = ?', [company_id]);
+    const [[salesCount]] = await pool.query('SELECT COUNT(*) as count FROM sales WHERE company_id = ?', [company_id]);
+    const [[companyRows]] = await pool.query('SELECT company_name FROM companies WHERE company_id = ?', [company_id]);
+    const [[pendingPoCount]] = await pool.query(
+      "SELECT COUNT(*) as count FROM purchase_orders WHERE company_id = ? AND status IN ('draft','sent')",
+      [company_id]
+    );
 
-  res.json({
-    success: true,
-    stats: {
-      company_name: companyRows ? companyRows.company_name : '',
-      total_items: itemsCount.count,
-      total_purchase_orders: poCount.count,
-      total_sales: salesCount.count,
-      pending_purchase_orders: pendingPoCount.count,
-    },
-  });
+    res.json({
+      success: true,
+      stats: {
+        company_name: companyRows ? companyRows.company_name : '',
+        total_items: itemsCount.count,
+        total_purchase_orders: poCount.count,
+        total_sales: salesCount.count,
+        pending_purchase_orders: pendingPoCount.count,
+      },
+    });
+  } catch (err) {
+    console.error('Error fetching user dashboard stats:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
+// trigger restart
 module.exports = router;

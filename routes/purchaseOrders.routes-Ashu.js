@@ -534,12 +534,6 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
       po_number = String(po_number).trim();
     }
 
-    if (!row.factory) {
-      summary.failed++;
-      summary.errors++;
-      summary.details.push({ row: index + 1, po_number, item: row.item_no || row.item_name, status: 'failed', reason: 'Factory is required' });
-      return; // Skip this row
-    }
 
     if (!poGroups[po_number]) {
       poGroups[po_number] = {

@@ -258,6 +258,7 @@ router.get('/summary/pos', verifyToken, async (req, res) => {
         po.po_delivery_date,
         po.status,
         po.buyer,
+        po.factory,
         po.sync_status,
         po.last_synced_at,
         COALESCE(SUM(pi.quantity * pi.price), 0) AS total_value,
@@ -276,6 +277,7 @@ router.get('/summary/pos', verifyToken, async (req, res) => {
       deliveryDate: r.po_delivery_date,
       status: r.status,
       buyer: r.buyer,
+      factory: r.factory,
       sync_status: r.sync_status,
       last_synced_at: r.last_synced_at,
       totalValue: Number(r.total_value || 0),
@@ -422,7 +424,15 @@ router.get('/summary/buyers/:buyer/pos', verifyToken, async (req, res) => {
 
   try {
     let dateFilter = '';
-    const params = [company_id, buyer];
+    const params = [company_id];
+    let buyerCondition = 'po.buyer = ?';
+
+    if (buyer === 'Unknown Buyer') {
+      buyerCondition = "(po.buyer IS NULL OR po.buyer = '' OR po.buyer = 'Unknown Buyer')";
+    } else {
+      params.push(buyer);
+    }
+
     if (start_date && end_date) {
       dateFilter = 'AND po.po_date BETWEEN ? AND ?';
       params.push(start_date, end_date);
@@ -439,7 +449,7 @@ router.get('/summary/buyers/:buyer/pos', verifyToken, async (req, res) => {
         COALESCE(SUM(pi.quantity), 0) AS total_quantity
       FROM purchase_orders po
       LEFT JOIN po_items pi ON pi.po_id = po.id
-      WHERE po.company_id = ? AND po.buyer = ? ${dateFilter}
+      WHERE po.company_id = ? AND ${buyerCondition} ${dateFilter}
       GROUP BY po.id
       ORDER BY po.po_date DESC
     `, params);
@@ -1744,12 +1754,6 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
       po_number = String(po_number).trim();
     }
 
-    if (!row.factory) {
-      summary.failed++;
-      summary.errors++;
-      summary.details.push({ row: index + 1, po_number, item: row.item_no || row.item_name, status: 'failed', reason: 'Factory is required' });
-      return; // Skip this row
-    }
 
     if (!poGroups[po_number]) {
       poGroups[po_number] = {
@@ -1783,6 +1787,7 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
       item_picture: row.item_picture || null,
       quantity: qty,
       price: Number(row.price) || 0,
+      currency: row.currency || 'USD',
       size: row.size || null,
       eft: row.eft || null,
       finish: row.finish || null

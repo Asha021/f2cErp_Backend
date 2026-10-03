@@ -7,16 +7,17 @@ const https = require('https');
 const http = require('http');
 
 // Fetch image from a URL and return as Buffer
-function fetchImageBuffer(url) {
-    return new Promise((resolve, reject) => {
-        const client = url.startsWith('https') ? https : http;
-        client.get(url, (res) => {
-            const chunks = [];
-            res.on('data', (chunk) => chunks.push(chunk));
-            res.on('end', () => resolve(Buffer.concat(chunks)));
-            res.on('error', reject);
-        }).on('error', reject);
-    });
+async function fetchImageBuffer(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 // Safe date formatter — avoids UTC/local timezone shift on MySQL date strings
@@ -38,7 +39,7 @@ function formatAlphanumericDate(val) {
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const month = monthNames[dateObj.getMonth()];
     const year = String(dateObj.getFullYear()).slice(-2);
-    return `${day}\u2011${month}\u2011${year}`;
+    return `${day}-${month}-${year}`;
 }
 
 async function generatePODocxFromTemplate(poData, poItems, companyData) {
@@ -207,10 +208,13 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
     // Replace PRICE header to include currency below it
     let mainCurrency = 'USD';
     if (poItems && poItems.length > 0) {
-        const c = poItems[0].currency;
-        if (c === '$' || c === 'USD') mainCurrency = 'USD';
-        else if (c === 'rs' || c === '₹' || c === 'INR') mainCurrency = 'INR';
-        else if (c) mainCurrency = c;
+        let c = poItems[0].currency;
+        if (c) {
+            c = String(c).trim().toUpperCase();
+            if (c === '$' || c === 'USD') mainCurrency = 'USD';
+            else if (c === 'RS' || c === '₹' || c === 'INR') mainCurrency = 'INR';
+            else mainCurrency = c;
+        }
     }
 
     xml = xml.replace(/<w:t>PRICE<\/w:t>/g, `<w:t>PRICE</w:t><w:br/><w:t>(${mainCurrency})</w:t>`);
@@ -238,7 +242,7 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         if (targetIndex !== -1) {
             let pPrIndex = h2xml.lastIndexOf('<w:pPr>', targetIndex);
 
-            const replacementText = '<w:t></w:t></w:r><w:r><w:rPr><w:sz w:val="12"/><w:szCs w:val="12"/><w:b/><w:bCs/></w:rPr><w:t>Revision Nbr: {revision_no}</w:t><w:br/></w:r><w:r><w:rPr><w:sz w:val="12"/><w:szCs w:val="12"/><w:b/><w:bCs/></w:rPr><w:t>Revision Dtd: {updated_at}</w:t></w:r><w:r><w:t></w:t>';
+            const replacementText = '<w:t></w:t></w:r><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/><w:b/><w:bCs/></w:rPr><w:t>Revision Nbr: {revision_no}</w:t><w:br/></w:r><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/><w:b/><w:bCs/></w:rPr><w:t>Revision Dtd: {updated_at}</w:t></w:r><w:r><w:t></w:t>';
 
             if (pPrIndex !== -1) {
                 h2xml = h2xml.substring(0, pPrIndex + 7) + '<w:jc w:val="center"/>' + h2xml.substring(pPrIndex + 7, targetIndex) + replacementText + h2xml.substring(targetIndex + targetTag.length);
@@ -293,10 +297,14 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
 
             // Cloudinary / any HTTP URL (new behavior)
             if (/^https?:\/\//i.test(pic)) {
+                let fetchUrl = pic;
+                if (fetchUrl.includes('res.cloudinary.com') && !fetchUrl.includes('f_jpg') && !fetchUrl.includes('f_png')) {
+                    fetchUrl = fetchUrl.replace('/upload/', '/upload/f_jpg/');
+                }
                 try {
-                    imageCache[`item_picture_${i}`] = await fetchImageBuffer(pic);
+                    imageCache[`item_picture_${i}`] = await fetchImageBuffer(fetchUrl);
                 } catch (e) {
-                    console.warn(`[DOCX] Failed to fetch image: ${pic}`, e.message);
+                    console.warn(`[DOCX] Failed to fetch image: ${fetchUrl}`, e.message);
                     imageCache[`item_picture_${i}`] = null;
                 }
             } else {
@@ -354,7 +362,8 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         buyer_address: toFirstLetterCaps(poData.buyer_address),
         factory: toFirstLetterCaps(poData.factory),
         factory_email: (poData.factory_email || '').toLowerCase(),
-        factory_address: toFirstLetterCaps(poData.factory_address) + '\nPincode: ___________',
+        factory_address: toFirstLetterCaps(poData.factory_address) + '\nPincode: _________',
+        // factory_address: toFirstLetterCaps(poData.factory_address),
         // Both key variants — template may use {delivery_date} OR {po_delivery_date}
         delivery_date: formatDate(poData.po_delivery_date),
         po_delivery_date: formatDate(poData.po_delivery_date),
