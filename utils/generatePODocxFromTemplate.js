@@ -362,8 +362,7 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         buyer_address: toFirstLetterCaps(poData.buyer_address),
         factory: toFirstLetterCaps(poData.factory),
         factory_email: (poData.factory_email || '').toLowerCase(),
-        factory_address: toFirstLetterCaps(poData.factory_address) + '\nPincode: _________',
-        // factory_address: toFirstLetterCaps(poData.factory_address),
+        factory_address: toFirstLetterCaps(poData.factory_address) + (poData.factory_pincode ? `\nPincode: ${poData.factory_pincode}` : '\nPincode: _________'),
         // Both key variants — template may use {delivery_date} OR {po_delivery_date}
         delivery_date: formatDate(poData.po_delivery_date),
         po_delivery_date: formatDate(poData.po_delivery_date),

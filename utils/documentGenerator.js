@@ -7,11 +7,11 @@ const { generatePODocxFromTemplate } = require('./generatePODocxFromTemplate');
 
 // Safe date formatter — splits YYYY-MM-DD string directly to avoid UTC/local timezone shift
 function formatDate(val) {
-    if (!val) return '';
-    const str = String(val).substring(0, 10);
-    const parts = str.split('-');
-    if (parts.length !== 3) return str;
-    return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+  if (!val) return '';
+  const str = String(val).substring(0, 10);
+  const parts = str.split('-');
+  if (parts.length !== 3) return str;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
 }
 
 /**
@@ -61,14 +61,14 @@ async function generatePOXlsx(poData, poItems, companyData) {
 
   // PO Information
   const poDetails = [
-    { label: 'PO Number',        value: poData.po_number || '' },
-    { label: 'PO Date',          value: formatDate(poData.po_date) },
-    { label: 'Buyer',            value: poData.buyer || '' },
-    { label: 'Buyer Address',    value: poData.buyer_address || '' },
-    { label: 'Factory',          value: poData.factory || '' },
-    { label: 'Factory Email',    value: poData.factory_email || '' },
-    { label: 'Factory Address',  value: poData.factory_address || '' },
-    { label: 'Delivery Date',    value: formatDate(poData.po_delivery_date) },
+    { label: 'PO Number', value: poData.po_number || '' },
+    { label: 'PO Date', value: formatDate(poData.po_date) },
+    { label: 'Buyer', value: poData.buyer || '' },
+    { label: 'Buyer Address', value: poData.buyer_address || '' },
+    { label: 'Factory', value: poData.factory || '' },
+    { label: 'Factory Email', value: poData.factory_email || '' },
+    { label: 'Factory Address', value: (poData.factory_address || '') + (poData.factory_pincode ? `\nPincode: ${poData.factory_pincode}` : '') },
+    { label: 'Delivery Date', value: formatDate(poData.po_delivery_date) },
     { label: 'Special Comments', value: poData.special_comments || '' }
   ];
 
@@ -76,7 +76,7 @@ async function generatePOXlsx(poData, poItems, companyData) {
     sheet.getCell(`A${currentRow}`).value = detail.label;
     sheet.getCell(`B${currentRow}`).value = detail.value;
     sheet.getCell(`A${currentRow}`).font = { name: 'Aptos', bold: true };
-    
+
     if (['Buyer Address', 'Factory Address', 'Special Comments'].includes(detail.label)) {
       sheet.getCell(`B${currentRow}`).alignment = { wrapText: true, vertical: 'top' };
       sheet.getRow(currentRow).height = 30;
@@ -96,10 +96,10 @@ async function generatePOXlsx(poData, poItems, companyData) {
   // Items Header
   let totalCurr = 'USD';
   if (poItems && poItems.length > 0) {
-      const c = poItems[0].currency;
-      if (c === '$' || c === 'USD') totalCurr = 'USD';
-      else if (c === 'rs' || c === '₹' || c === 'INR') totalCurr = 'INR';
-      else if (c) totalCurr = c;
+    const c = poItems[0].currency;
+    if (c === '$' || c === 'USD') totalCurr = 'USD';
+    else if (c === 'rs' || c === '₹' || c === 'INR') totalCurr = 'INR';
+    else if (c) totalCurr = c;
   }
   const headers = ['Item No', 'Serial Number', 'Description', 'Quantity', `Price (${totalCurr})`, `Subtotal (${totalCurr})`, 'Image'];
   const headerCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -135,7 +135,7 @@ async function generatePOXlsx(poData, poItems, companyData) {
       sheet.getCell(`E${itemRow}`).numFmt = `#,##0.00`;
       sheet.getCell(`F${itemRow}`).numFmt = `#,##0.00`;
       sheet.getCell(`C${itemRow}`).alignment = { wrapText: true, vertical: 'top' };
-      
+
       headerCols.forEach(col => {
         sheet.getCell(`${col}${itemRow}`).border = {
           top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
@@ -157,7 +157,7 @@ async function generatePOXlsx(poData, poItems, companyData) {
   sheet.getCell(`E${currentRow}`).value = 'Total:';
   sheet.getCell(`F${currentRow}`).value = grandTotal;
   sheet.getCell(`F${currentRow}`).numFmt = `#,##0.00`;
-  
+
   ['E', 'F'].forEach(col => {
     const cell = sheet.getCell(`${col}${currentRow}`);
     cell.font = { name: 'Aptos', bold: true };

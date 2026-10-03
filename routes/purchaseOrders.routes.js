@@ -297,6 +297,26 @@ router.get('/summary/pos', verifyToken, async (req, res) => {
 // =====================================================================
 
 // ---------------------------------------------------------------------
+// GET /api/purchase-orders/lookup/buyers
+// Returns distinct buyers with their addresses for autocomplete
+// ---------------------------------------------------------------------
+router.get('/lookup/buyers', verifyToken, async (req, res) => {
+  const company_id = req.user.company_id;
+  try {
+    const [rows] = await pool.query(
+      `SELECT buyer, buyer_address, buyer_pincode 
+       FROM purchase_orders 
+       WHERE company_id = ? AND buyer IS NOT NULL AND buyer != ''
+       GROUP BY buyer, buyer_address, buyer_pincode`,
+      [company_id]
+    );
+    res.json({ success: true, buyers: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------
 // LEVEL 1: GET /api/purchase-orders/summary/buyers
 // LEVEL 1: GET /api/purchase-orders/summary/dates
 // LEVEL 1: GET /api/purchase-orders/summary/items
@@ -562,7 +582,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // POST /api/purchase-orders -> orders/create_purchase_order.php
 router.post('/', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
-  const { po_number, po_date, buyer, buyer_address, factory, factory_email, factory_address, po_delivery_date, special_comments, terms, items } = req.body;
+  const { po_number, po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, po_delivery_date, special_comments, terms, items } = req.body;
 
 
 
@@ -575,9 +595,9 @@ router.post('/', verifyToken, async (req, res) => {
 
     const [result] = await conn.query(
       `INSERT INTO purchase_orders
-        (company_id, po_number, po_date, buyer, buyer_address, factory, factory_email, factory_address, po_delivery_date, special_comments, terms, status, revision_no)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0)`,
-      [company_id, po_number, safe_po_date, buyer, buyer_address, factory, factory_email, factory_address, safe_delivery_date, special_comments, terms]
+        (company_id, po_number, po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, po_delivery_date, special_comments, terms, status, revision_no)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0)`,
+      [company_id, po_number, safe_po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, safe_delivery_date, special_comments, terms]
     );
 
     const po_id = result.insertId;
@@ -1046,7 +1066,7 @@ router.put('/:id', verifyToken, async (req, res) => {
   const company_id = req.user.company_id;
   const po_id = req.params.id;
   const userRole = req.user.role;
-  const { po_number, po_date, buyer, buyer_address, factory, factory_email, factory_address, po_delivery_date, special_comments, terms, status, items } = req.body;
+  const { po_number, po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, po_delivery_date, special_comments, terms, status, items } = req.body;
 
   const conn = await pool.getConnection();
   try {
@@ -1073,9 +1093,9 @@ router.put('/:id', verifyToken, async (req, res) => {
 
     const [updateResult] = await conn.query(
       `UPDATE purchase_orders
-       SET po_number=?, po_date=?, buyer=?, buyer_address=?, factory=?, factory_email=?, factory_address=?, po_delivery_date=?, special_comments=?, terms=?, status=?, updated_at=NOW()
+       SET po_number=?, po_date=?, buyer=?, buyer_address=?, buyer_pincode=?, factory=?, factory_email=?, factory_address=?, factory_pincode=?, po_delivery_date=?, special_comments=?, terms=?, status=?, updated_at=NOW()
        WHERE id=? AND company_id=?`,
-      [po_number, safe_po_date, buyer, buyer_address, factory, factory_email, factory_address, safe_delivery_date, special_comments, terms, status, po_id, company_id]
+      [po_number, safe_po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, safe_delivery_date, special_comments, terms, status, po_id, company_id]
     );
     if (updateResult.changedRows > 0) anyChange = true;
 
@@ -1760,9 +1780,11 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
         po_number,
         buyer: row.buyer || '',
         buyer_address: row.buyer_address || '',
+        buyer_pincode: row.buyer_pincode || null,
         factory: row.factory || '',
         factory_email: row.factory_email || '',
         factory_address: row.factory_address || '',
+        factory_pincode: row.factory_pincode || null,
         po_date: row.po_date || new Date(),
         po_delivery_date: row.delivery_date || row.po_delivery_date || null,
         special_comments: row.special_comments || '',
@@ -1826,8 +1848,8 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
           po_id = existingPo[0].id;
           // Update master PO fields
           await conn.query(
-            `UPDATE purchase_orders SET buyer=?, buyer_address=?, factory=?, factory_email=?, factory_address=?, po_date=?, po_delivery_date=?, special_comments=? WHERE id=?`,
-            [group.buyer, group.buyer_address, group.factory, group.factory_email, group.factory_address, group.po_date, group.po_delivery_date, group.special_comments, po_id]
+            `UPDATE purchase_orders SET buyer=?, buyer_address=?, buyer_pincode=?, factory=?, factory_email=?, factory_address=?, factory_pincode=?, po_date=?, po_delivery_date=?, special_comments=? WHERE id=?`,
+            [group.buyer, group.buyer_address, group.buyer_pincode, group.factory, group.factory_email, group.factory_address, group.factory_pincode, group.po_date, group.po_delivery_date, group.special_comments, po_id]
           );
 
           if (duplicateOption === 'update') {
@@ -1842,9 +1864,9 @@ router.post('/import', verifyToken, excelUpload.single('file'), async (req, res)
       if (!po_id) { // Insert new PO
         const [result] = await conn.query(
           `INSERT INTO purchase_orders 
-           (company_id, po_number, po_date, buyer, buyer_address, factory, factory_email, factory_address, po_delivery_date, special_comments, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [company_id, group.po_number, group.po_date, group.buyer, group.buyer_address, group.factory, group.factory_email, group.factory_address, group.po_delivery_date, group.special_comments, group.status]
+           (company_id, po_number, po_date, buyer, buyer_address, buyer_pincode, factory, factory_email, factory_address, factory_pincode, po_delivery_date, special_comments, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [company_id, group.po_number, group.po_date, group.buyer, group.buyer_address, group.buyer_pincode, group.factory, group.factory_email, group.factory_address, group.factory_pincode, group.po_delivery_date, group.special_comments, group.status]
         );
         po_id = result.insertId;
       }
