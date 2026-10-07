@@ -925,7 +925,7 @@ router.post('/:id/sync-inspectapp', verifyToken, async (req, res) => {
         return {
           erp_item_id: item.id,
           item_number: item.item_no || '',
-          item_name: item.item_name || '',
+          item_name: item.description || item.item_name || '',
           order_quantity: item.quantity || 0,
           material: item.material || '',
           finish: item.finish || '',

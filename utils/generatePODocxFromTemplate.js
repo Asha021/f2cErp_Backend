@@ -368,7 +368,7 @@ async function generatePODocxFromTemplate(poData, poItems, companyData) {
         po_delivery_date: formatDate(poData.po_delivery_date),
         special_comments: toFirstLetterCaps(poData.special_comments),
         revision_no: poData.revision_no != null ? String(poData.revision_no) : '0',
-        updated_at: formatAlphanumericDate(poData.updatedAt || poData.createdAt || new Date()),
+        updated_at: (poData.revision_no == null || poData.revision_no == 0 || poData.revision_no === '0') ? '0' : formatAlphanumericDate(poData.updatedAt || poData.createdAt || new Date()),
     };
 
     if (poItems && poItems.length > 0) {

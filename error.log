@@ -491,3 +491,37 @@ AggregateError:
     at router.process_params (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
     at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
     at urlencodedParser (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)
+AggregateError: 
+    at C:\Mern\uac\fullFlow\f2cReact\backend\routes\auth.routes.js:19:31
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at router.handle (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:175:3)
+    at router (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:47:12)
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at trim_prefix (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:328:13)
+    at C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:286:9
+    at router.process_params (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at urlencodedParser (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)
+AggregateError: 
+    at C:\Mern\uac\fullFlow\f2cReact\backend\routes\auth.routes.js:19:31
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:284:15
+    at router.process_params (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at router.handle (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:175:3)
+    at router (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:47:12)
+    at Layer.handle [as handle_request] (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\layer.js:95:5)
+    at trim_prefix (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:328:13)
+    at C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:286:9
+    at router.process_params (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\express\lib\router\index.js:280:10)
+    at urlencodedParser (C:\Mern\uac\fullFlow\f2cReact\backend\node_modules\body-parser\lib\types\urlencoded.js:86:7)

@@ -58,7 +58,7 @@ async function syncToInspectAppHelper(po_id, company_id, conn, req = null) {
           : '';
 
         return {
-          erp_item_id: item.id, item_number: item.item_no || '', item_name: item.item_name || '', order_quantity: item.quantity || 0,
+          erp_item_id: item.id, item_number: item.item_no || '', item_name: item.description || item.item_name || '', order_quantity: item.quantity || 0,
           material: item.material || '', finish: item.finish || '', weight: item.weight || '', length: l, width: w, height: h,
           upc: item.upc || '', product_image_url: fullImageUrl, item_picture_url: fullImageUrl, pieces_to_assemble: item.pieces_to_assemble || 0
         };
@@ -1237,10 +1237,10 @@ router.post('/:id/request-delete-otp', verifyToken, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Purchase order not found' });
     }
 
-    // 2. Get user email
-    const [userRows] = await pool.query('SELECT email FROM users WHERE user_id = ?', [user_id]);
+    // 2. Get company admin email
+    const [userRows] = await pool.query('SELECT email FROM users WHERE company_id = ? AND role = "admin" LIMIT 1', [company_id]);
     if (userRows.length === 0 || !userRows[0].email) {
-      return res.status(400).json({ success: false, message: 'Admin email not found' });
+      return res.status(400).json({ success: false, message: 'Company admin email not found' });
     }
 
     // 3. Generate 6-digit OTP
@@ -1271,7 +1271,7 @@ router.post('/:id/request-delete-otp', verifyToken, async (req, res) => {
       html
     });
 
-    res.json({ success: true, message: 'OTP sent to registered email' });
+    res.json({ success: true, message: `An OTP has been sent to your registered email ${userRows[0].email} address. Please enter the 6-digit code below to confirm deletion. ` });
   } catch (err) {
     console.error('Error requesting OTP:', err);
     res.status(500).json({ success: false, message: 'Failed to generate OTP' });
