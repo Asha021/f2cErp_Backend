@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const pool = require('../config/db');
-
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 async function getTransporter(companyId) {
   const [rows] = await pool.query(
     'SELECT smtp_host, smtp_email, smtp_password, smtp_port, smtp_from_name FROM companies WHERE company_id = ?',

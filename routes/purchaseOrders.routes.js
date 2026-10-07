@@ -1274,7 +1274,7 @@ router.post('/:id/request-delete-otp', verifyToken, async (req, res) => {
     res.json({ success: true, message: `An OTP has been sent to your registered email ${userRows[0].email} address. Please enter the 6-digit code below to confirm deletion. ` });
   } catch (err) {
     console.error('Error requesting OTP:', err);
-    res.status(500).json({ success: false, message: 'Failed to generate OTP' });
+    res.status(500).json({ success: false, message: 'Failed to generate OTP: ' + err.message });
   }
 });
 
