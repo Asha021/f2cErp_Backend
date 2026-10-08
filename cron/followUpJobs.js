@@ -96,8 +96,8 @@ function initCronJobs() {
 
 
   // 2. Weekly Consolidated Report (Saturdays at 11:00 AM)
-  cron.schedule('0 11 * * 6', async () => {
-  // cron.schedule('*/1 * * * *', async () => {
+  // cron.schedule('0 11 * * 6', async () => {
+  cron.schedule('*/1 * * * *', async () => {
     console.log('Running weekly consolidated report job...');
     try {
       // A. Missing Delivery Dates
