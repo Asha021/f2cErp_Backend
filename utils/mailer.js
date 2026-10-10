@@ -12,15 +12,20 @@ async function getSystemTransporter() {
   const envFromName = process.env.SMTP_FROM_NAME || 'UA CONSULTANTS';
   const envFromEmail = process.env.SMTP_FROM_EMAIL || envUser;
 
+  const cleanPass = envPass ? envPass.replace(/^["']|["']$/g, '') : null;
+
   // If env has valid user & password
-  if (envUser && envPass && envUser !== 'your_email@gmail.com') {
+  if (envUser && cleanPass && envUser !== 'your_email@gmail.com') {
     const transporter = nodemailer.createTransport({
       host: envHost,
       port: envPort,
       secure: envPort === 465,
       auth: {
         user: envUser,
-        pass: envPass,
+        pass: cleanPass,
+      },
+      tls: {
+        rejectUnauthorized: false,
       },
     });
     return {
@@ -52,6 +57,9 @@ async function getSystemTransporter() {
       auth: {
         user: config.smtp_email,
         pass: config.smtp_password,
+      },
+      tls: {
+        rejectUnauthorized: false,
       },
     });
     return { transporter, config };

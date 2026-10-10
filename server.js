@@ -54,6 +54,31 @@ app.use('/api/reports', require('./routes/reports.routes'));
 app.use('/api/workflow', workflowRoutes);
 app.use('/api/audit', auditRoutes);
 
+// Test endpoints to manually trigger and verify cron jobs on live server
+const { initCronJobs, runDailyStageFollowUp, runWeeklyConsolidatedReport } = require('./cron/followUpJobs');
+
+app.get('/api/cron/test-weekly', async (req, res) => {
+  try {
+    const result = await runWeeklyConsolidatedReport();
+    res.json({ success: true, message: 'Weekly report execution finished', result });
+  } catch (err) {
+    console.error('Test weekly error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/cron/test-daily', async (req, res) => {
+  try {
+    const result = await runDailyStageFollowUp();
+    res.json({ success: true, message: 'Daily stage follow-up execution finished', result });
+  } catch (err) {
+    console.error('Test daily error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+initCronJobs();
+
 // 404
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 
@@ -63,9 +88,6 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
-
-const { initCronJobs } = require('./cron/followUpJobs');
-initCronJobs();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
