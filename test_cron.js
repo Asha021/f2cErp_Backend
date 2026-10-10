@@ -8,7 +8,8 @@ async function runTestCron() {
       `SELECT po.*, c.smtp_email 
        FROM purchase_orders po
        JOIN companies c ON po.company_id = c.company_id
-       WHERE po.status != 'completed' AND po.status != 'cancelled'`
+       WHERE po.status != 'completed' AND po.status != 'cancelled'
+       AND c.status = 'active'`
     );
 
     const now = new Date();

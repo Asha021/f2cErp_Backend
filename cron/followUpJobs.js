@@ -3,38 +3,41 @@ const pool = require('../config/db');
 const { sendEmail } = require('../utils/mailer');
 
 function initCronJobs() {
-  // 1. Daily Follow-up for stages scheduled TODAY (or delayed)
-  // cron.schedule('0 8 * * *', async () => {
-  cron.schedule('*/1 * * * *', async () => {
+  // 1. Daily Follow-up for stages scheduled TODAY (Daily at 12:00 PM)
+  cron.schedule('0 12 * * *', async () => {
+    // cron.schedule('*/1 * * * *', async () => {
     console.log('Running daily stage follow-up job...');
     try {
       const [stages] = await pool.query(`
         SELECT 
           po.id as po_id, po.po_number, po.factory_email, po.company_id,
+          c.email as company_email, c.company_name,
           ps.stage_name, 
-          pws.scheduled_end_date,
-          DATEDIFF(CURRENT_DATE(), pws.scheduled_end_date) as days_late
+          pws.scheduled_end_date
         FROM purchase_orders po
+        JOIN companies c ON po.company_id = c.company_id
         JOIN po_workflow_schedules pws ON po.id = pws.po_id
         JOIN production_stages ps ON pws.stage_id = ps.id
         WHERE po.status != 'completed' AND po.status != 'cancelled'
+        AND c.status = 'active'
         AND pws.actual_end_date IS NULL
-        AND pws.scheduled_end_date <= CURRENT_DATE()
+        AND pws.scheduled_end_date = CURRENT_DATE()
       `);
 
       if (stages.length === 0) {
-        console.log('No stages found for today or delayed.');
+        console.log('No stages scheduled for today.');
         return;
       }
 
       const poGroups = {};
       stages.forEach(row => {
-        if (!row.factory_email) return;
+        if (!row.company_email) return;
         if (!poGroups[row.po_id]) {
           poGroups[row.po_id] = {
             company_id: row.company_id,
+            company_name: row.company_name,
+            company_email: row.company_email,
             po_number: row.po_number,
-            factory_email: row.factory_email,
             stages: []
           };
         }
@@ -43,48 +46,71 @@ function initCronJobs() {
 
       for (const poId in poGroups) {
         const poData = poGroups[poId];
-        let stagesHtml = `
-          <h3 style="margin-bottom: 8px; color: #1e293b; font-size: 14px;">PO #${poData.po_number}</h3>
-          <table style="width: 100%; max-width: 600px; border-collapse: collapse; text-align: left; font-size: 12px; border: 1px solid #e5e7eb; margin-bottom: 24px; font-family: sans-serif;">
-            <tr style="background-color: #f8fafc; border-bottom: 1px solid #cbd5e1; color: #475569; text-transform: uppercase;">
-              <th style="padding: 10px; font-weight: 600;">STAGE</th>
-              <th style="padding: 10px; font-weight: 600;">SCHEDULED DATE</th>
-              <th style="padding: 10px; font-weight: 600;">STATUS</th>
-            </tr>
-        `;
-        poData.stages.forEach(stage => {
-          const dateStr = new Date(stage.scheduled_end_date).toLocaleDateString();
-          let statusText = 'pending';
-          if (stage.days_late > 0) {
-            statusText = `pending (Delayed by ${stage.days_late} days)`;
-          }
-          stagesHtml += `
-            <tr style="border-bottom: 1px solid #f1f5f9; color: #334155;">
-              <td style="padding: 10px; font-weight: 500;">${stage.stage_name}</td>
-              <td style="padding: 10px;">${dateStr}</td>
-              <td style="padding: 10px;"><em>${statusText}</em></td>
+        let stagesRows = '';
+        poData.stages.forEach((stage, idx) => {
+          const dateStr = new Date(stage.scheduled_end_date).toLocaleDateString('en-GB');
+          const bgColor = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+          stagesRows += `
+            <tr style="background-color: ${bgColor};">
+              <td style="padding: 9px 10px; font-weight: 600; color: #0f172a; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${stage.stage_name}</td>
+              <td style="padding: 9px 10px; color: #334155; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${dateStr}</td>
+              <td style="padding: 9px 10px; color: #0284c7; font-weight: 600; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">Scheduled for today</td>
             </tr>
           `;
         });
-        stagesHtml += `</table>`;
 
         const reminderMessage = `
-          <div style="font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: 0 auto; background-color: #ffffff; color: #333333;">
-            <p style="font-size: 14px; margin-bottom: 20px;">The following stages are scheduled for today or delayed. Please ensure they are updated.</p>
-            ${stagesHtml}
-            <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px;">
-              This is an automated daily notification from your ERP system. Please do not reply.
-            </div>
+          <div style="font-family: Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 600px; padding: 12px 6px; color: #1e293b;">
+            <!--[if (gte mso 9)|(IE)]>
+            <table align="center" border="0" cellspacing="0" cellpadding="0" width="600">
+            <tr><td>
+            <![endif]-->
+            <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; max-width: 600px; margin: 0 auto; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 0 0 14px 0; font-family: Arial, sans-serif;">
+                  <p style="margin: 0 0 6px 0; font-size: 15px; font-weight: bold; color: #0f172a; font-family: Arial, sans-serif;">PO #${poData.po_number} - Stage Alert</p>
+                  <p style="margin: 0; font-size: 13px; color: #475569; font-family: Arial, sans-serif;">The following stage(s) are scheduled for today:</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0; font-family: Arial, sans-serif;">
+                  <table border="1" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">
+                    <thead>
+                      <tr style="background-color: #f1f5f9; color: #475569;">
+                        <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">STAGE</th>
+                        <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">SCHEDULED DATE</th>
+                        <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${stagesRows}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 18px 0 0 0; font-size: 11px; color: #94a3b8; text-align: center; font-family: Arial, sans-serif;">
+                  Automated Stage Notification &bull; ERP System
+                </td>
+              </tr>
+            </table>
+            <!--[if (gte mso 9)|(IE)]>
+            </td></tr>
+            </table>
+            <![endif]-->
           </div>
         `;
+
+        if (!poData.company_email) continue;
 
         try {
           await sendEmail({
             companyId: poData.company_id,
-            to: poData.factory_email,
+            to: poData.company_email,
             subject: `Daily Stage Alert - PO #${poData.po_number}`,
             html: reminderMessage
           });
+          console.log(`Sent stage alert for PO #${poData.po_number} to company: ${poData.company_email}`);
         } catch (err) {
           console.error(`Failed to send reminder for PO ${poData.po_number}:`, err.message);
         }
@@ -95,23 +121,25 @@ function initCronJobs() {
   });
 
 
-  // 2. Weekly Consolidated Report (Saturdays at 11:00 AM)
-  // cron.schedule('0 11 * * 6', async () => {
-  cron.schedule('*/1 * * * *', async () => {
-    console.log('Running weekly consolidated report job...');
+  // 2. Weekly Consolidated Report (Saturdays at 12:00 PM)
+  cron.schedule('0 12 * * 6', async () => {
+    // cron.schedule('*/1 * * * *', async () => {
+    console.log('Running weekly consolidated report job (Saturday to Saturday)...');
     try {
-      // A. Missing Delivery Dates
+      // A. Missing Delivery Dates for POs created in the past week (Saturday to Saturday)
       const [missingDeliveryDatePOs] = await pool.query(`
         SELECT 
-          po.id as po_id, po.po_number, po.created_at, po.company_id, po.buyer,
-          c.email as company_email, c.company_name,
-          SUM(pi.quantity * pi.price) as total_value,
-          MAX(pi.currency) as currency
+
+          po.id as po_id, po.po_number, po.po_date, po.created_at, po.company_id, po.factory,
+          c.email as company_email, c.company_name
         FROM purchase_orders po
         JOIN companies c ON po.company_id = c.company_id
-        LEFT JOIN po_items pi ON po.id = pi.po_id
-        WHERE po.po_delivery_date IS NULL OR po.po_delivery_date = '' OR po.po_delivery_date = '0000-00-00 00:00:00'
+        WHERE po.status != 'completed' AND po.status != 'cancelled'
+        AND c.status = 'active'
+        AND (po.po_delivery_date IS NULL OR po.po_delivery_date = '' OR po.po_delivery_date = '0000-00-00 00:00:00')
+        AND po.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         GROUP BY po.id, c.email, c.company_name
+        ORDER BY po.created_at DESC
       `);
 
       // Group all by company
@@ -134,50 +162,63 @@ function initCronJobs() {
       for (const compId in companyGroups) {
         const compData = companyGroups[compId];
 
-        let poListHtml = '';
-        if (compData.missing_pos.length > 0) {
-          poListHtml += `
-            <p style="font-size: 14px; margin-bottom: 20px; color: #374151;">This is your weekly OFC (Order Follow-up Chart) alert. The following Purchase Orders are currently missing a <strong>Delivery Date</strong>.</p>
-            <div style="background-color: #fdf2f2; border-left: 3px solid #ef4444; padding: 12px 16px; margin-bottom: 24px;">
-              <strong style="color: #b91c1c; font-size: 14px; display: block; margin-bottom: 4px;">Action Required</strong>
-              <span style="color: #b91c1c; font-size: 13px;">Please update the Delivery Date for these POs in the system. OFC cannot be generated until the Delivery Date is available.</span>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; border: 1px solid #e5e7eb; margin-bottom: 24px; font-family: sans-serif;">
-              <tr style="background-color: #f8fafc; border-bottom: 1px solid #cbd5e1; text-transform: uppercase; color: #475569;">
-                <th style="padding: 10px; font-weight: 600;">S.NO</th>
-                <th style="padding: 10px; font-weight: 600;">PO NUMBER</th>
-                <th style="padding: 10px; font-weight: 600;">BUYER ID</th>
-                <th style="padding: 10px; font-weight: 600;">VALUE</th>
-              </tr>
-          `;
-          compData.missing_pos.forEach((po, idx) => {
-            const val = po.total_value ? (po.currency || '$') + ' ' + po.total_value : '-';
-            const buyerId = po.buyer || '-';
-            poListHtml += `
-              <tr style="border-bottom: 1px solid #f1f5f9; color: #334155;">
-                <td style="padding: 10px;">${idx + 1}</td>
-                <td style="padding: 10px; font-weight: 600;">${po.po_number || '-'}</td>
-                <td style="padding: 10px;">${buyerId}</td>
-                <td style="padding: 10px;">${val}</td>
-              </tr>
-            `;
-          });
-          poListHtml += `
-            </table>
-            <p style="font-size: 13px; color: #475569; margin-top: 24px;">Once the Delivery Dates are updated, the OFC can be generated normally.</p>
-            <p style="font-size: 13px; color: #475569;">Thank you.</p>
-          `;
-        }
+        if (compData.missing_pos.length === 0) continue;
 
-        if (poListHtml === '') continue;
+        let rowsHtml = '';
+        compData.missing_pos.forEach((po, idx) => {
+          const rawDate = po.po_date || po.created_at;
+          const formattedDate = rawDate ? new Date(rawDate).toLocaleDateString('en-GB') : '-';
+          const bgColor = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+          rowsHtml += `
+            <tr style="background-color: ${bgColor};">
+              <td style="padding: 9px 8px; text-align: center; color: #64748b; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px; width: 36px;">${idx + 1}</td>
+              <td style="padding: 9px 10px; font-weight: 600; color: #0f172a; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${po.po_number || '-'}</td>
+              <td style="padding: 9px 10px; color: #334155; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${formattedDate}</td>
+              <td style="padding: 9px 10px; color: #334155; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${po.factory || '-'}</td>
+            </tr>
+          `;
+        });
 
         const messageHtml = `
-          <div style="font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: 0 auto; background-color: #ffffff; color: #333333;">
-            <p style="font-size: 14px; margin-bottom: 20px;">Hello <strong>${compData.company_name} Team</strong>,</p>
-            ${poListHtml}
-            <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px; text-align: center;">
-              This is an automated weekly notification from your ERP system. Please do not reply.
-            </div>
+          <div style="font-family: Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 600px; padding: 12px 6px; color: #1e293b;">
+            <!--[if (gte mso 9)|(IE)]>
+            <table align="center" border="0" cellspacing="0" cellpadding="0" width="600">
+            <tr><td>
+            <![endif]-->
+            <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; max-width: 600px; margin: 0 auto; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 0 0 14px 0; font-family: Arial, sans-serif;">
+                  <p style="margin: 0 0 6px 0; font-size: 15px; font-weight: bold; color: #0f172a; font-family: Arial, sans-serif;">Hello ${compData.company_name} Team,</p>
+                  <p style="margin: 0; font-size: 13px; color: #475569; font-family: Arial, sans-serif;">Please update the <strong>Delivery Date</strong> for the following Purchase Orders:</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0; font-family: Arial, sans-serif;">
+                  <table border="1" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">
+                    <thead>
+                      <tr style="background-color: #f1f5f9; color: #475569;">
+                        <th style="padding: 9px 8px; font-size: 11px; font-weight: 600; text-align: center; border: 1px solid #cbd5e1; width: 36px; font-family: Arial, sans-serif;">S.NO</th>
+                        <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">PO NUMBER</th>
+                        <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">PO DATE</th>
+                        <th style="padding: 10px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">FACTORY</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${rowsHtml}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 18px 0 0 0; font-size: 11px; color: #94a3b8; text-align: center; font-family: Arial, sans-serif;">
+                  Automated OFC Notification &bull; ERP System
+                </td>
+              </tr>
+            </table>
+            <!--[if (gte mso 9)|(IE)]>
+            </td></tr>
+            </table>
+            <![endif]-->
           </div>
         `;
 
@@ -188,9 +229,9 @@ function initCronJobs() {
             subject: 'PENDING UPDATION',
             html: messageHtml
           });
-          console.log(`Sent weekly report to ${ compData.company_name } `);
+          console.log(`Sent weekly report to ${compData.company_name} `);
         } catch (err) {
-          console.error(`Error sending weekly report to ${ compData.company_name }: `, err);
+          console.error(`Error sending weekly report to ${compData.company_name}: `, err);
         }
       }
     } catch (err) {
