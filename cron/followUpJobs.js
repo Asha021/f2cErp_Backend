@@ -124,24 +124,60 @@ async function runDailyStageFollowUp() {
   }
 }
 
-async function runWeeklyConsolidatedReport() {
-  console.log('Running weekly consolidated report job (Saturday to Saturday)...');
+async function runWeeklyConsolidatedReport(options = {}) {
+  const days = options.days || 7;
+  const ignoreDates = options.ignoreDates || false;
+  console.log(`Running weekly consolidated report job (days=${days}, ignoreDates=${ignoreDates})...`);
   const summary = { totalCompanies: 0, sentCount: 0, errors: [] };
   try {
-    // Missing Delivery Dates for POs created in the past week (Saturday to Saturday)
+    let dateFilter = `AND po.created_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY)`;
+    if (ignoreDates) {
+      dateFilter = '';
+    }
+
+    // Missing Delivery Dates for POs (case-insensitive company status, flexible date)
     const [missingDeliveryDatePOs] = await pool.query(`
       SELECT 
         po.id as po_id, po.po_number, po.po_date, po.created_at, po.company_id, po.factory,
-        c.email as company_email, c.company_name
+        c.email as company_email, c.company_name, c.status as company_status
       FROM purchase_orders po
       JOIN companies c ON po.company_id = c.company_id
       WHERE po.status != 'completed' AND po.status != 'cancelled'
-      AND c.status = 'active'
+      AND (LOWER(c.status) = 'active' OR c.status IS NULL OR c.status = '1')
       AND (po.po_delivery_date IS NULL OR po.po_delivery_date = '' OR po.po_delivery_date = '0000-00-00 00:00:00')
-      AND po.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY po.id, c.email, c.company_name
+      ${dateFilter}
+      GROUP BY po.id, c.email, c.company_name, c.status
       ORDER BY po.created_at DESC
     `);
+
+    if (missingDeliveryDatePOs.length === 0) {
+      console.log('No POs missing delivery date found for current filter.');
+      try {
+        const [counts] = await pool.query(`
+          SELECT 
+            (SELECT COUNT(*) FROM purchase_orders) as total_pos_in_db,
+            (SELECT COUNT(*) FROM purchase_orders WHERE (po_delivery_date IS NULL OR po_delivery_date = '' OR po_delivery_date = '0000-00-00 00:00:00')) as pos_without_delivery_date,
+            (SELECT COUNT(*) FROM purchase_orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)) as pos_in_past_days
+          FROM DUAL
+        `, [days]);
+        const [recentPOs] = await pool.query(`
+          SELECT id, po_number, created_at, status, company_id, po_delivery_date 
+          FROM purchase_orders ORDER BY id DESC LIMIT 5
+        `);
+        const [companies] = await pool.query(`
+          SELECT company_id, company_name, email, status FROM companies
+        `);
+        summary.diagnostics = {
+          counts: counts[0],
+          recentPOs,
+          companies,
+          note: `0 POs matched criteria: po.status NOT IN ('completed','cancelled') AND po_delivery_date IS NULL AND created_at within ${days} days`
+        };
+      } catch (diagErr) {
+        summary.diagError = diagErr.message;
+      }
+      return summary;
+    }
 
     // Group all by company
     const companyGroups = {};
@@ -270,7 +306,7 @@ function initCronJobs() {
   });
 }
 
-module.exports = { 
+module.exports = {
   initCronJobs,
   runDailyStageFollowUp,
   runWeeklyConsolidatedReport

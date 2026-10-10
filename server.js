@@ -59,7 +59,9 @@ const { initCronJobs, runDailyStageFollowUp, runWeeklyConsolidatedReport } = req
 
 app.get('/api/cron/test-weekly', async (req, res) => {
   try {
-    const result = await runWeeklyConsolidatedReport();
+    const days = req.query.days ? parseInt(req.query.days, 10) : 7;
+    const ignoreDates = req.query.all === 'true';
+    const result = await runWeeklyConsolidatedReport({ days, ignoreDates });
     res.json({ success: true, message: 'Weekly report execution finished', result });
   } catch (err) {
     console.error('Test weekly error:', err);
