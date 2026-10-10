@@ -270,7 +270,7 @@ async function runWeeklyConsolidatedReport(options = {}) {
             </tr>
             <tr>
               <td style="padding: 18px 0 0 0; font-size: 11px; color: #94a3b8; text-align: center; font-family: Arial, sans-serif;">
-                Automated OFC Notification &bull; ERP System
+                Automated OFC Notification &bull; Source 360
               </td>
             </tr>
           </table>
@@ -316,7 +316,8 @@ function initCronJobs() {
   });
 
   // 2. Weekly Consolidated Report (Saturdays at 12:00 PM IST)
-  cron.schedule('0 12 * * 6', async () => {
+  // cron.schedule('0 12 * * 6', async () => {
+      cron.schedule('*/1 * * * *', async () => {
     try {
       await runWeeklyConsolidatedReport();
     } catch (err) {
