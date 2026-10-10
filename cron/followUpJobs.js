@@ -129,7 +129,6 @@ function initCronJobs() {
       // A. Missing Delivery Dates for POs created in the past week (Saturday to Saturday)
       const [missingDeliveryDatePOs] = await pool.query(`
         SELECT 
-
           po.id as po_id, po.po_number, po.po_date, po.created_at, po.company_id, po.factory,
           c.email as company_email, c.company_name
         FROM purchase_orders po
