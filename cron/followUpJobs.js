@@ -2,24 +2,28 @@ const cron = require('node-cron');
 const pool = require('../config/db');
 const { sendEmail } = require('../utils/mailer');
 
-async function runDailyStageFollowUp() {
+async function runDailyStageFollowUp(options = {}) {
   console.log('Running daily stage follow-up job...');
   const summary = { totalPOs: 0, sentCount: 0, errors: [] };
+  const dateFilter = options.all ? '' : 'AND pws.scheduled_end_date = CURRENT_DATE()';
   try {
     const [stages] = await pool.query(`
       SELECT 
         po.id as po_id, po.po_number, po.factory_email, po.company_id,
         c.email as company_email, c.company_name,
         ps.stage_name, 
-        pws.scheduled_end_date
+        pws.scheduled_end_date,
+        pi.id as item_id, pi.item_no, pi.item_name, pi.description, pi.quantity
       FROM purchase_orders po
       JOIN companies c ON po.company_id = c.company_id
       JOIN po_workflow_schedules pws ON po.id = pws.po_id
       JOIN production_stages ps ON pws.stage_id = ps.id
+      LEFT JOIN po_items pi ON po.id = pi.po_id
       WHERE po.status != 'completed' AND po.status != 'cancelled'
-      AND c.status = 'active'
+      AND (LOWER(c.status) = 'active' OR c.status IS NULL OR c.status = '1')
       AND pws.actual_end_date IS NULL
-      AND pws.scheduled_end_date = CURRENT_DATE()
+      ${dateFilter}
+      ORDER BY po.id ASC, ps.order_index ASC, pi.id ASC
     `);
 
     if (stages.length === 0) {
@@ -36,40 +40,52 @@ async function runDailyStageFollowUp() {
           company_name: row.company_name,
           company_email: row.company_email,
           po_number: row.po_number,
-          stages: []
+          items: []
         };
       }
-      poGroups[row.po_id].stages.push(row);
+
+      const dateStr = new Date(row.scheduled_end_date).toLocaleDateString('en-GB');
+      poGroups[row.po_id].items.push({
+        item_no: row.item_no || '-',
+        description: row.description || row.item_name || '-',
+        quantity: row.quantity !== null && row.quantity !== undefined ? row.quantity : '-',
+        stage_name: row.stage_name,
+        dateStr: dateStr,
+        status: 'Scheduled for today'
+      });
     });
 
     summary.totalPOs = Object.keys(poGroups).length;
 
     for (const poId in poGroups) {
       const poData = poGroups[poId];
-      let stagesRows = '';
-      poData.stages.forEach((stage, idx) => {
-        const dateStr = new Date(stage.scheduled_end_date).toLocaleDateString('en-GB');
+      let itemRows = '';
+      poData.items.forEach((item, idx) => {
         const bgColor = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-        stagesRows += `
+        itemRows += `
           <tr style="background-color: ${bgColor};">
-            <td style="padding: 9px 10px; font-weight: 600; color: #0f172a; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${stage.stage_name}</td>
-            <td style="padding: 9px 10px; color: #334155; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${dateStr}</td>
-            <td style="padding: 9px 10px; color: #0284c7; font-weight: 600; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">Scheduled for today</td>
+            <td style="padding: 9px 8px; text-align: center; color: #64748b; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px; width: 36px;">${idx + 1}</td>
+            <td style="padding: 9px 10px; font-weight: 600; color: #0f172a; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.item_no}</td>
+            <td style="padding: 9px 10px; color: #334155; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.description}</td>
+            <td style="padding: 9px 10px; text-align: center; color: #0f172a; font-weight: 600; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.quantity}</td>
+            <td style="padding: 9px 10px; font-weight: 600; color: #0f172a; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.stage_name}</td>
+            <td style="padding: 9px 10px; color: #334155; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.dateStr}</td>
+            <td style="padding: 9px 10px; color: #0284c7; font-weight: 600; white-space: nowrap; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">${item.status}</td>
           </tr>
         `;
       });
 
       const reminderMessage = `
-        <div style="font-family: Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 600px; padding: 12px 6px; color: #1e293b;">
+        <div style="font-family: Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 720px; padding: 12px 6px; color: #1e293b;">
           <!--[if (gte mso 9)|(IE)]>
-          <table align="center" border="0" cellspacing="0" cellpadding="0" width="600">
+          <table align="center" border="0" cellspacing="0" cellpadding="0" width="720">
           <tr><td>
           <![endif]-->
-          <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; max-width: 600px; margin: 0 auto; border-collapse: collapse;">
+          <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; max-width: 720px; margin: 0 auto; border-collapse: collapse;">
             <tr>
               <td style="padding: 0 0 14px 0; font-family: Arial, sans-serif;">
                 <p style="margin: 0 0 6px 0; font-size: 15px; font-weight: bold; color: #0f172a; font-family: Arial, sans-serif;">PO #${poData.po_number} - Stage Alert</p>
-                <p style="margin: 0; font-size: 13px; color: #475569; font-family: Arial, sans-serif;">The following stage(s) are scheduled for today:</p>
+                <p style="margin: 0; font-size: 13px; color: #475569; font-family: Arial, sans-serif;">The following stage(s) and item(s) are scheduled for today:</p>
               </td>
             </tr>
             <tr>
@@ -77,13 +93,17 @@ async function runDailyStageFollowUp() {
                 <table border="1" cellpadding="0" cellspacing="0" width="100%" style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-family: Arial, sans-serif; font-size: 12px;">
                   <thead>
                     <tr style="background-color: #f1f5f9; color: #475569;">
-                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">STAGE</th>
+                      <th style="padding: 9px 8px; font-size: 11px; font-weight: 600; text-align: center; border: 1px solid #cbd5e1; width: 36px; font-family: Arial, sans-serif;">S.NO</th>
+                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">ITEM NO</th>
+                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">DESCRIPTION</th>
+                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: center; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">ORDER QTY</th>
+                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">STAGE</th>
                       <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">SCHEDULED DATE</th>
-                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; font-family: Arial, sans-serif;">STATUS</th>
+                      <th style="padding: 9px 10px; font-size: 11px; font-weight: 600; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; font-family: Arial, sans-serif;">STATUS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    ${stagesRows}
+                    ${itemRows}
                   </tbody>
                 </table>
               </td>
@@ -284,7 +304,8 @@ async function runWeeklyConsolidatedReport(options = {}) {
 
 function initCronJobs() {
   // 1. Daily Follow-up for stages scheduled TODAY (Daily at 12:00 PM IST)
-  cron.schedule('0 12 * * *', async () => {
+  // cron.schedule('0 12 * * *', async () => {
+  cron.schedule('*/1 * * * *', async () => {
     try {
       await runDailyStageFollowUp();
     } catch (err) {

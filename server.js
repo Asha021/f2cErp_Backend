@@ -71,7 +71,7 @@ app.get('/api/cron/test-weekly', async (req, res) => {
 
 app.get('/api/cron/test-daily', async (req, res) => {
   try {
-    const result = await runDailyStageFollowUp();
+    const result = await runDailyStageFollowUp({ all: req.query.all === 'true' });
     res.json({ success: true, message: 'Daily stage follow-up execution finished', result });
   } catch (err) {
     console.error('Test daily error:', err);
