@@ -304,8 +304,8 @@ async function runWeeklyConsolidatedReport(options = {}) {
 
 function initCronJobs() {
   // 1. Daily Follow-up for stages scheduled TODAY (Daily at 12:00 PM IST)
-  // cron.schedule('0 12 * * *', async () => {
-  cron.schedule('*/1 * * * *', async () => {
+  cron.schedule('0 12 * * *', async () => {
+  // cron.schedule('*/1 * * * *', async () => {
     try {
       await runDailyStageFollowUp();
     } catch (err) {
@@ -316,8 +316,8 @@ function initCronJobs() {
   });
 
   // 2. Weekly Consolidated Report (Saturdays at 12:00 PM IST)
-  // cron.schedule('0 12 * * 6', async () => {
-      cron.schedule('*/1 * * * *', async () => {
+  cron.schedule('0 12 * * 6', async () => {
+      // cron.schedule('*/1 * * * *', async () => {
     try {
       await runWeeklyConsolidatedReport();
     } catch (err) {
